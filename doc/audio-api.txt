@@ -71,6 +71,24 @@ Methods		void Connect()
 			Returns TRUE if there is a active connection to the
 			HSP/HFP connection on the remote device.
 
+		void RegisterAgent(object path)
+
+			The object path defines the path the of the agent
+			that will be called when a new HSP/HFP connection
+			is established.
+
+			If an application disconnects from the bus all of its
+			registered agents will be removed.
+
+		void UnregisterAgent(object path)
+
+			This unregisters the agent that has been previously
+			registered. The object path parameter must match the
+			same value that has been used on registration.
+
+			Possible Errors: org.bluez.Error.Failed
+					 org.bluez.Error.InvalidArguments
+
 		void IndicateCall()
 
 			Indicate an incoming call on the headset
