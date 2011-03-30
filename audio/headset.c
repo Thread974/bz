@@ -151,6 +151,12 @@ struct headset_slc {
 	unsigned int hf_features;
 };
 
+struct hs_agent {
+	char *name;	/* Bus id */
+	char *path;	/* D-Bus path */
+	guint watch;	/* Disconnect watch */
+};
+
 struct headset {
 	uint32_t hsp_handle;
 	uint32_t hfp_handle;
@@ -176,6 +182,9 @@ struct headset {
 	headset_lock_t lock;
 	struct headset_slc *slc;
 	GSList *nrec_cbs;
+
+	struct hs_agent *agent;
+	DBusMessage *msg;
 };
 
 struct event {
@@ -1728,6 +1737,86 @@ static DBusMessage *hs_is_connected(DBusConnection *conn,
 	return reply;
 }
 
+static void agent_free(struct hs_agent *agent)
+{
+	if (!agent)
+		return;
+
+	g_free(agent->name);
+	g_free(agent->path);
+	g_free(agent);
+}
+
+static void agent_exited(DBusConnection *conn, void *data)
+{
+	struct headset *hs = data;
+	struct hs_agent *agent = hs->agent;
+
+	DBG("Agent %s exited", agent->name);
+
+	agent_free(agent);
+	hs->agent = NULL;
+}
+
+static DBusMessage *register_agent(DBusConnection *conn,
+					DBusMessage *msg, void *data)
+{
+	struct audio_device *device = data;
+	struct headset *hs = device->headset;
+	struct hs_agent *agent;
+	const char *path, *name;
+
+	if (hs->agent)
+		return btd_error_already_exists(msg);
+
+	if (!dbus_message_get_args(msg, NULL, DBUS_TYPE_OBJECT_PATH, &path,
+						DBUS_TYPE_INVALID))
+		return btd_error_invalid_args(msg);
+
+	name = dbus_message_get_sender(msg);
+	agent = g_new0(struct hs_agent, 1);
+
+	agent->name = g_strdup(name);
+	agent->path = g_strdup(path);
+
+	agent->watch = g_dbus_add_disconnect_watch(conn, name,
+						agent_exited, hs, NULL);
+
+	hs->agent = agent;
+
+	return dbus_message_new_method_return(msg);
+}
+
+static DBusMessage *unregister_agent(DBusConnection *conn,
+				DBusMessage *msg, void *data)
+{
+	struct audio_device *device = data;
+	struct headset *hs = device->headset;
+	const char *path;
+
+	if (!hs->agent)
+		goto done;
+
+	if (strcmp(hs->agent->name, dbus_message_get_sender(msg)) != 0)
+		return btd_error_not_authorized(msg);
+
+	if (!dbus_message_get_args(msg, NULL,
+				DBUS_TYPE_OBJECT_PATH, &path,
+				DBUS_TYPE_INVALID))
+		return btd_error_invalid_args(msg);
+
+	if (strcmp(hs->agent->path, path) != 0)
+		return btd_error_does_not_exist(msg);
+
+	g_dbus_remove_watch(device->conn, hs->agent->watch);
+
+	agent_free(hs->agent);
+	hs->agent = NULL;
+
+done:
+	return dbus_message_new_method_return(msg);
+}
+
 static DBusMessage *hs_connect(DBusConnection *conn, DBusMessage *msg,
 					void *data)
 {
@@ -2059,6 +2148,8 @@ static GDBusMethodTable headset_methods[] = {
 						G_DBUS_METHOD_FLAG_ASYNC },
 	{ "Disconnect",		"",	"",	hs_disconnect },
 	{ "IsConnected",	"",	"b",	hs_is_connected },
+	{ "RegisterAgent",	"o",	"",	register_agent },
+	{ "UnregisterAgent",	"o",	"",	unregister_agent },
 	{ "IndicateCall",	"",	"",	hs_ring },
 	{ "CancelCall",		"",	"",	hs_cancel_call },
 	{ "Play",		"",	"",	hs_play,
