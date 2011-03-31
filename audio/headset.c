@@ -1275,6 +1275,90 @@ static void close_sco(struct audio_device *device)
 	}
 }
 
+static gboolean rfcomm_disconnect_cb(GIOChannel *chan, GIOCondition cond,
+				struct audio_device *device)
+{
+	if (cond & G_IO_NVAL)
+		return FALSE;
+
+	if (cond & (G_IO_ERR | G_IO_HUP)) {
+		DBG("ERR or HUP on RFCOMM socket with agent");
+		headset_set_state(device, HEADSET_STATE_DISCONNECTED);
+	}
+
+	return FALSE;
+}
+
+static void newconnection_reply(DBusPendingCall *call, void *data)
+{
+	struct audio_device *dev = data;
+	struct headset *hs = dev->headset;
+	DBusMessage *reply = dbus_pending_call_steal_reply(call);
+	DBusError derr;
+
+	if (!hs->rfcomm) {
+		DBG("RFCOMM disconnected from server before agent reply");
+		goto done;
+	}
+
+	dbus_error_init(&derr);
+	if (!dbus_set_error_from_message(&derr, reply)) {
+		DBG("Agent reply: file descriptor passed successfully");
+
+		g_io_add_watch(hs->rfcomm, G_IO_ERR | G_IO_HUP | G_IO_NVAL,
+				(GIOFunc) rfcomm_disconnect_cb, dev);
+
+		hs->slc = g_new0(struct headset_slc, 1);
+		hs->slc->sp_gain = 15;
+		hs->slc->mic_gain = 15;
+		hs->slc->nrec = TRUE;
+
+		pending_connect_finalize(dev);
+		headset_set_state(dev, HEADSET_STATE_CONNECTED);
+		goto done;
+	}
+
+	DBG("Agent reply: %s", derr.message);
+	headset_set_state(dev, HEADSET_STATE_DISCONNECTED);
+
+	dbus_error_free(&derr);
+
+done:
+	dbus_message_unref(reply);
+}
+
+static void agent_disconnect(struct audio_device *dev, struct hs_agent *agent)
+{
+	DBusMessage *msg;
+
+	msg = dbus_message_new_method_call(agent->name, agent->path,
+			"org.bluez.HandsfreeAgent", "Release");
+
+	g_dbus_send_message(dev->conn, msg);
+}
+
+static gboolean agent_sendfd(struct hs_agent *agent, int fd,
+		DBusPendingCallNotifyFunction notify, void *data)
+{
+	struct audio_device *dev = data;
+	DBusMessage *msg;
+	DBusPendingCall *call;
+
+	msg = dbus_message_new_method_call(agent->name, agent->path,
+			"org.bluez.HandsfreeAgent", "NewConnection");
+
+	dbus_message_append_args(msg, DBUS_TYPE_UNIX_FD, &fd,
+					DBUS_TYPE_INVALID);
+
+	if (dbus_connection_send_with_reply(dev->conn, msg, &call, -1) == FALSE)
+		return FALSE;
+
+	dbus_pending_call_set_notify(call, notify, dev, NULL);
+	dbus_pending_call_unref(call);
+
+	return TRUE;
+}
+
 static gboolean rfcomm_io_cb(GIOChannel *chan, GIOCondition cond,
 				struct audio_device *device)
 {
@@ -1383,10 +1467,29 @@ void headset_connect_cb(GIOChannel *chan, GError *err, gpointer user_data)
 	struct headset *hs = dev->headset;
 	struct pending_connect *p = hs->pending;
 	char hs_address[18];
+	int sk;
 
 	if (err) {
 		error("%s", err->message);
 		goto failed;
+	}
+
+	/* if an agent is registered, let the agent do everything */
+	if (hs->agent) {
+		sk = g_io_channel_unix_get_fd(chan);
+
+		hs->rfcomm = hs->tmp_rfcomm;
+		hs->tmp_rfcomm = NULL;
+
+		if (!agent_sendfd(hs->agent, sk, newconnection_reply, dev))
+			goto failed;
+
+		if (p && p->msg) {
+			DBusMessage *reply = dbus_message_new_method_return(p->msg);
+			g_dbus_send_message(dev->conn, reply);
+		}
+
+		return;
 	}
 
 	/* For HFP telephony isn't ready just disconnect */
@@ -1766,12 +1869,16 @@ static DBusMessage *register_agent(DBusConnection *conn,
 	struct hs_agent *agent;
 	const char *path, *name;
 
+	DBG("hs->agent %p", hs->agent);
+
 	if (hs->agent)
 		return btd_error_already_exists(msg);
 
 	if (!dbus_message_get_args(msg, NULL, DBUS_TYPE_OBJECT_PATH, &path,
 						DBUS_TYPE_INVALID))
 		return btd_error_invalid_args(msg);
+
+	DBG("path %s", path);
 
 	name = dbus_message_get_sender(msg);
 	agent = g_new0(struct hs_agent, 1);
@@ -1804,6 +1911,8 @@ static DBusMessage *unregister_agent(DBusConnection *conn,
 				DBUS_TYPE_OBJECT_PATH, &path,
 				DBUS_TYPE_INVALID))
 		return btd_error_invalid_args(msg);
+
+	DBG("path %p", path);
 
 	if (strcmp(hs->agent->path, path) != 0)
 		return btd_error_does_not_exist(msg);
@@ -2231,6 +2340,12 @@ static int headset_close_rfcomm(struct audio_device *dev)
 	struct headset *hs = dev->headset;
 	GIOChannel *rfcomm = hs->tmp_rfcomm ? hs->tmp_rfcomm : hs->rfcomm;
 
+	if (hs->agent) {
+		int sk = g_io_channel_unix_get_fd(rfcomm);
+		DBG("Shutting sk %d down", sk);
+		shutdown(sk, SHUT_RDWR);
+	}
+
 	if (rfcomm) {
 		g_io_channel_shutdown(rfcomm, TRUE, NULL);
 		g_io_channel_unref(rfcomm);
@@ -2281,6 +2396,9 @@ static void path_unregister(void *data)
 
 void headset_unregister(struct audio_device *dev)
 {
+	if (dev->headset->agent)
+		agent_disconnect(dev, dev->headset->agent);
+
 	g_dbus_unregister_interface(dev->conn, dev->path,
 		AUDIO_HEADSET_INTERFACE);
 }
