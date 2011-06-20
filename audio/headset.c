@@ -1821,9 +1821,9 @@ static DBusMessage *hs_play(DBusConnection *conn, DBusMessage *msg,
 	int err;
 
 	if (sco_hci) {
-		error("Refusing Headset.Play() because SCO HCI routing "
+		error("DISABLED Refusing Headset.Play() because SCO HCI routing "
 				"is enabled");
-		return btd_error_not_available(msg);
+		//return btd_error_not_available(msg);
 	}
 
 	switch (hs->state) {
