@@ -307,6 +307,9 @@ static int headset_send_valist(struct headset *hs, char *format, va_list ap)
 	if (count < 0)
 		return -EINVAL;
 
+	if(hs->agent != NULL)
+		DBG("Sent AT command while agent registered (%s)", rsp);
+
 	if (!hs->rfcomm) {
 		error("headset_send: the headset is not connected");
 		return -EIO;
@@ -2113,6 +2116,9 @@ static DBusMessage *hs_set_gain(DBusConnection *conn,
 	if (hs->state < HEADSET_STATE_CONNECTED)
 		return btd_error_not_connected(msg);
 
+	if (hs->agent != NULL)
+		return btd_error_busy(msg);
+
 	err = headset_set_gain(device, gain, type);
 	if (err < 0)
 		return btd_error_invalid_args(msg);
@@ -2803,6 +2809,8 @@ void headset_set_state(struct audio_device *dev, headset_state_t state)
 					AUDIO_HEADSET_INTERFACE, "Playing",
 					DBUS_TYPE_BOOLEAN, &value);
 
+		if (hs->agent != NULL)
+			break;
 		if (slc->sp_gain >= 0)
 			headset_send(hs, "\r\n+VGS=%u\r\n", slc->sp_gain);
 		if (slc->mic_gain >= 0)
