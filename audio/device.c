@@ -81,6 +81,7 @@ struct dev_priv {
 	audio_state_t state;
 
 	headset_state_t hs_state;
+	gateway_state_t ag_state;
 	sink_state_t sink_state;
 	avctp_state_t avctp_state;
 	GSList *auths;
@@ -102,6 +103,7 @@ static unsigned int sink_callback_id = 0;
 static unsigned int avctp_callback_id = 0;
 static unsigned int avdtp_callback_id = 0;
 static unsigned int headset_callback_id = 0;
+static unsigned int gateway_callback_id = 0;
 
 static void device_free(struct audio_device *dev)
 {
@@ -519,6 +521,33 @@ static void device_headset_cb(struct audio_device *dev,
 	}
 }
 
+static void device_gateway_cb(struct audio_device *dev,
+				gateway_state_t old_state,
+				gateway_state_t new_state,
+				void *user_data)
+{
+	struct dev_priv *priv = dev->priv;
+
+	if (!dev->gateway)
+		return;
+
+	priv->ag_state = new_state;
+
+	switch (new_state) {
+	case GATEWAY_STATE_DISCONNECTED:
+		device_set_state(dev, AUDIO_STATE_DISCONNECTED);
+		break;
+	case GATEWAY_STATE_CONNECTING:
+		device_set_state(dev, AUDIO_STATE_CONNECTING);
+		break;
+	case GATEWAY_STATE_CONNECTED:
+		device_set_state(dev, AUDIO_STATE_CONNECTED);
+		break;
+	case GATEWAY_STATE_PLAYING:
+		break;
+	}
+}
+
 static DBusMessage *dev_connect(DBusConnection *conn, DBusMessage *msg,
 								void *data)
 {
@@ -674,6 +703,9 @@ struct audio_device *audio_device_register(DBusConnection *conn,
 
 	if (headset_callback_id == 0)
 		headset_callback_id = headset_add_state_cb(device_headset_cb,
+									NULL);
+	if (gateway_callback_id == 0)
+		gateway_callback_id = gateway_add_state_cb(device_gateway_cb,
 									NULL);
 
 	return dev;
