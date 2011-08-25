@@ -385,7 +385,7 @@ static void discovery_complete(struct avdtp *session, GSList *seps, struct avdtp
 		return;
 	}
 
-	DBG("Discovery complete");
+	DBG("Sink discovery complete");
 
 	id = a2dp_select_capabilities(sink->session, AVDTP_SEP_TYPE_SINK, NULL,
 						select_complete, sink);

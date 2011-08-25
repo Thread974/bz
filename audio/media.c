@@ -602,7 +602,7 @@ static void gateway_state_changed(struct audio_device *dev,
 {
 	struct media_endpoint *endpoint = user_data;
 
-	DBG("");
+	DBG("%d -> %d", old_state, new_state);
 
 	switch (new_state) {
 	case GATEWAY_STATE_DISCONNECTED:

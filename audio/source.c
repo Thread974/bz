@@ -336,7 +336,7 @@ static void discovery_complete(struct avdtp *session, GSList *seps, struct avdtp
 		return;
 	}
 
-	DBG("Discovery complete");
+	DBG("Source discovery complete");
 
 	id = a2dp_select_capabilities(source->session, AVDTP_SEP_TYPE_SOURCE, NULL,
 						select_complete, source);

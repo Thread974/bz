@@ -569,6 +569,7 @@ int gateway_close(struct audio_device *device)
 	}
 
 	if (gw->sco) {
+		DBG("Forcing SCO disconnect");
 		g_io_channel_shutdown(gw->sco, TRUE, NULL);
 		g_io_channel_unref(gw->sco);
 		gw->sco = NULL;

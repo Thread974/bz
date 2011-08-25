@@ -99,6 +99,8 @@ void media_transport_destroy(struct media_transport *transport)
 {
 	char *path;
 
+	DBG("");
+
 	path = g_strdup(transport->path);
 	g_dbus_unregister_interface(transport->conn, path,
 						MEDIA_TRANSPORT_INTERFACE);
@@ -156,8 +158,12 @@ static gboolean media_transport_release(struct media_transport *transport,
 
 static void media_owner_remove(struct media_owner *owner)
 {
+	DBG("Owner %p", owner);
+	{
+
 	struct media_transport *transport = owner->transport;
 	struct media_request *req = owner->pending;
+	DBG("Owner %p transport %p req %p", owner, transport, req);
 
 	if (!req)
 		return;
@@ -173,10 +179,12 @@ static void media_owner_remove(struct media_owner *owner)
 		dbus_message_unref(req->msg);
 
 	g_free(req);
+	}
 }
 
 static void media_owner_free(struct media_owner *owner)
 {
+	DBG("Owner %p", owner);
 	DBG("Owner %s", owner->name);
 
 	media_owner_remove(owner);
@@ -189,6 +197,7 @@ static void media_owner_free(struct media_owner *owner)
 static void media_transport_remove(struct media_transport *transport,
 						struct media_owner *owner)
 {
+	DBG("Transport %p Owner %p", transport, owner);
 	DBG("Transport %s Owner %s", transport->path, owner->name);
 
 	media_transport_release(transport, owner->accesstype);
@@ -550,6 +559,8 @@ static void media_owner_exit(DBusConnection *connection, void *user_data)
 {
 	struct media_owner *owner = user_data;
 
+	DBG("Owner %p", owner);
+
 	owner->watch = 0;
 
 	media_owner_remove(owner);
@@ -595,6 +606,7 @@ static gboolean media_transport_acquire(struct media_transport *transport,
 static void media_transport_add(struct media_transport *transport,
 					struct media_owner *owner)
 {
+	DBG("Transport %p Owner %p", transport, owner);
 	DBG("Transport %s Owner %s", transport->path, owner->name);
 	transport->owners = g_slist_append(transport->owners, owner);
 	owner->transport = transport;
@@ -607,6 +619,7 @@ static struct media_owner *media_owner_create(DBusConnection *conn,
 	struct media_owner *owner;
 
 	owner = g_new0(struct media_owner, 1);
+	DBG("Owner %p", owner);
 	owner->name = g_strdup(dbus_message_get_sender(msg));
 	owner->accesstype = g_strdup(accesstype);
 	owner->watch = g_dbus_add_disconnect_watch(conn, owner->name,
@@ -622,6 +635,7 @@ static struct media_owner *media_owner_create(DBusConnection *conn,
 static void media_owner_add(struct media_owner *owner,
 						struct media_request *req)
 {
+	DBG("Owner %p request %p", owner, req);
 	DBG("Owner %s Request %s", owner->name,
 					dbus_message_get_member(req->msg));
 
@@ -652,6 +666,8 @@ static DBusMessage *acquire(DBusConnection *conn, DBusMessage *msg,
 	struct media_request *req;
 	const char *accesstype, *sender;
 	guint id;
+
+	DBG("");
 
 	if (!dbus_message_get_args(msg, NULL,
 				DBUS_TYPE_STRING, &accesstype,
@@ -688,6 +704,8 @@ static DBusMessage *release(DBusConnection *conn, DBusMessage *msg,
 	struct media_owner *owner;
 	const char *accesstype, *sender;
 	struct media_request *req;
+
+	DBG("");
 
 	if (!dbus_message_get_args(msg, NULL,
 				DBUS_TYPE_STRING, &accesstype,
@@ -799,6 +817,8 @@ static DBusMessage *set_property(DBusConnection *conn, DBusMessage *msg,
 	GSList *l;
 	int err;
 
+	DBG("");
+
 	if (!dbus_message_iter_init(msg, &iter))
 		return btd_error_invalid_args(msg);
 
@@ -870,6 +890,8 @@ void transport_get_properties(struct media_transport *transport,
 	const char *uuid;
 	uint8_t codec;
 
+	DBG("");
+
 	dbus_message_iter_open_container(iter, DBUS_TYPE_ARRAY,
 			DBUS_DICT_ENTRY_BEGIN_CHAR_AS_STRING
 			DBUS_TYPE_STRING_AS_STRING DBUS_TYPE_VARIANT_AS_STRING
@@ -901,6 +923,8 @@ static DBusMessage *get_properties(DBusConnection *conn, DBusMessage *msg,
 	DBusMessage *reply;
 	DBusMessageIter iter;
 
+	DBG("");
+
 	reply = dbus_message_new_method_return(msg);
 	if (!reply)
 		return NULL;
@@ -931,6 +955,8 @@ static void media_transport_free(void *data)
 {
 	struct media_transport *transport = data;
 	GSList *l = transport->owners;
+
+	DBG("");
 
 	while (l) {
 		struct media_owner *owner = l->data;
@@ -975,6 +1001,8 @@ struct media_transport *media_transport_create(DBusConnection *conn,
 	struct media_transport *transport;
 	const char *uuid;
 	static int fd = 0;
+
+	DBG("");
 
 	transport = g_new0(struct media_transport, 1);
 	transport->conn = dbus_connection_ref(conn);

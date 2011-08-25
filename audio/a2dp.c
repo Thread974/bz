@@ -1990,7 +1990,7 @@ unsigned int a2dp_select_capabilities(struct avdtp *session,
 
 	sep = a2dp_select_sep(session, type, sender);
 	if (!sep) {
-		error("Unable to select SEP");
+		error("Unable to select SEP: type %d, sender %s", type, sender);
 		return 0;
 	}
 
