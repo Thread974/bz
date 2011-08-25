@@ -575,6 +575,9 @@ static DBusMessage *dev_connect(DBusConnection *conn, DBusMessage *msg,
 		avdtp_unref(session);
 	}
 
+	if (priv->state != AUDIO_STATE_CONNECTING && dev->gateway)
+		gateway_config_stream(dev, NULL, NULL);
+
 	/* The previous calls should cause a call to the state callback to
 	 * indicate AUDIO_STATE_CONNECTING */
 	if (priv->state != AUDIO_STATE_CONNECTING)
