@@ -591,6 +591,8 @@ static void hf_io_cb(GIOChannel *chan, gpointer data)
 			goto drop;
 	}
 
+	DBG("Connected with socket %d", g_io_channel_unix_get_fd(chan));
+
 	if (gateway_is_active(device)) {
 		DBG("Refusing new connection since one already exists");
 		goto drop;

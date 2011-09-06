@@ -272,6 +272,8 @@ static gboolean rfcomm_disconnect_cb(GIOChannel *chan, GIOCondition cond,
 	if (cond & G_IO_NVAL)
 		return FALSE;
 
+	DBG("*** 3: gw->rfcomm == %p %d", dev->gateway->rfcomm, *(guint*)(dev->gateway->rfcomm));
+
 	gateway_close(dev);
 
 	return FALSE;
@@ -559,12 +561,17 @@ int gateway_close(struct audio_device *device)
 	struct gateway *gw = device->gateway;
 	int sock;
 
+	DBG("");
+
 	if (gw->rfcomm) {
 		sock = g_io_channel_unix_get_fd(gw->rfcomm);
 		shutdown(sock, SHUT_RDWR);
 
 		g_io_channel_shutdown(gw->rfcomm, TRUE, NULL);
+		DBG("*** 2.1: gw->rfcomm == %p %d", gw->rfcomm, *(guint*)(gw->rfcomm));
 		g_io_channel_unref(gw->rfcomm);
+		DBG("*** 2.2: gw->rfcomm == %p %d", gw->rfcomm, *(guint*)(gw->rfcomm));
+
 		gw->rfcomm = NULL;
 	}
 
@@ -782,10 +789,14 @@ gboolean gateway_is_active(struct audio_device *dev)
 
 int gateway_connect_rfcomm(struct audio_device *dev, GIOChannel *io)
 {
+	struct gateway *gw = dev->gateway;
+
 	if (!io)
 		return -EINVAL;
 
+	DBG("*** 0.1: gw->rfcomm == %p", gw->rfcomm);
 	dev->gateway->rfcomm = g_io_channel_ref(io);
+	DBG("*** 0.2: gw->rfcomm == %p %d", gw->rfcomm, *(guint*)(gw->rfcomm));
 
 	change_state(dev, GATEWAY_STATE_CONNECTING);
 
