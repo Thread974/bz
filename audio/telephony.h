@@ -54,7 +54,7 @@ void telephony_device_disconnect(void *slc);
 void telephony_device_disconnected(void *telephony_device);
 
 gboolean telephony_get_ready_state(void);
-uint32_t telephony_get_ag_features(void);
+void *telephony_agent_by_uuid(const char *uuid);
 
 int telephony_init(void *adapter);
 void telephony_exit(void *adapter);

@@ -108,6 +108,7 @@ struct headset {
 
 	GIOChannel *rfcomm;
 	GIOChannel *tmp_rfcomm;
+	void *connecting_agent;
 	GIOChannel *sco;
 	guint sco_id;
 
@@ -413,6 +414,7 @@ void headset_connect_cb(GIOChannel *chan, GError *err, gpointer user_data)
 		hs->auto_dc = FALSE;
 
 	hs->slc = telephony_device_connecting(chan, dev);
+	hs->connecting_agent = NULL;
 
 	DBG("%s: Connected to %s", dev->path, hs_address);
 
@@ -543,6 +545,7 @@ failed_not_supported:
 	}
 failed:
 	p->svclass = 0;
+	hs->connecting_agent = NULL;
 	pending_connect_finalize(dev);
 	headset_set_state(dev, HEADSET_STATE_DISCONNECTED);
 }
@@ -560,6 +563,14 @@ static int get_records(struct audio_device *device, headset_stream_cb_t cb,
 	else
 		svclass = hs->search_hfp ? HANDSFREE_SVCLASS_ID :
 							HEADSET_SVCLASS_ID;
+
+	if (svclass == HANDSFREE_SVCLASS_ID)
+		hs->connecting_agent = telephony_agent_by_uuid(HFP_AG_UUID);
+	else
+		hs->connecting_agent = telephony_agent_by_uuid(HSP_AG_UUID);
+
+	if (hs->connecting_agent == NULL)
+		return -1;
 
 	sdp_uuid16_create(&uuid, svclass);
 
@@ -989,14 +1000,14 @@ register_iface:
 	return hs;
 }
 
-uint32_t headset_config_init(GKeyFile *config)
+void headset_config_init(GKeyFile *config)
 {
 	GError *err = NULL;
 	char *str;
 
 	/* Use the default values if there is no config file */
 	if (config == NULL)
-		return telephony_get_ag_features();
+		return;
 
 	str = g_key_file_get_string(config, "General", "SCORouting",
 					&err);
@@ -1012,8 +1023,6 @@ uint32_t headset_config_init(GKeyFile *config)
 			error("Invalid Headset Routing value: %s", str);
 		g_free(str);
 	}
-
-	return telephony_get_ag_features();
 }
 
 static gboolean hs_dc_timeout(struct audio_device *dev)
@@ -1203,6 +1212,20 @@ GIOChannel *headset_get_rfcomm(struct audio_device *dev)
 	struct headset *hs = dev->headset;
 
 	return hs->tmp_rfcomm;
+}
+
+void headset_set_connecting_agent(struct audio_device *dev, void *agent)
+{
+	struct headset *hs = dev->headset;
+
+	hs->connecting_agent = agent;
+}
+
+void *headset_get_connecting_agent(struct audio_device *dev)
+{
+	struct headset *hs = dev->headset;
+
+	return hs->connecting_agent;
 }
 
 int headset_connect_rfcomm(struct audio_device *dev, GIOChannel *io)
