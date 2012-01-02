@@ -71,16 +71,6 @@ Methods		void Connect()
 			Returns TRUE if there is a active connection to the
 			HSP/HFP connection on the remote device.
 
-		void IndicateCall()
-
-			Indicate an incoming call on the headset
-			connected to the stream. Will continue to
-			ring the headset about every 3 seconds.
-
-		void CancelCall()
-
-			Cancel the incoming call indication.
-
 		void Play() {deprecated}
 
 			Open the audio connection to the headset.
@@ -94,24 +84,6 @@ Methods		void Connect()
 			Returns true if an audio connection to the headset
 			is active.
 
-		uint16 GetSpeakerGain() {deprecated}
-
-			Returns the current speaker gain if available,
-			otherwise returns the error NotAvailable.
-
-		uint16 GetMicrophoneGain() {deprecated}
-
-			Returns the current microphone gain if available,
-			otherwise returns the error NotAvailable.
-
-		void SetSpeakerGain(uint16 gain) {deprecated}
-
-			Changes the current speaker gain if possible.
-
-		void SetMicrophoneGain(uint16 gain) {deprecated}
-
-			Changes the current speaker gain if possible.
-
 		dict GetProperties()
 
 			Returns all properties for the interface. See the
@@ -119,44 +91,7 @@ Methods		void Connect()
 
 			Possible Errors: org.bluez.Error.InvalidArguments
 
-		void SetProperty(string name, variant value)
-
-			Changes the value of the specified property. Only
-			properties that are listed a read-write are changeable.
-			On success this will emit a PropertyChanged signal.
-
-			Possible Errors: org.bluez.Error.DoesNotExist
-					 org.bluez.Error.InvalidArguments
-
-Signals		void AnswerRequested()
-
-			Sent when the answer button is pressed on the headset
-
-		void Connected() {deprecated}
-
-			Sent when the device has been connected to.
-
-		void Disconnected() {deprecated}
-
-			Sent when the device has been disconnected from.
-
-		void Stopped() {deprecated}
-
-			Sent when the audio connection is closed
-
-		void Playing() {deprecated}
-
-			Sent when the audio connection is opened
-
-		void SpeakerGainChanged(uint16 gain) {deprecated}
-
-			The speaker gain changed.
-
-		void MicrophoneGainChanged(uint16 gain) {deprecated}
-
-			The microphone gain changed.
-
-		PropertyChanged(string name, variant value)
+Signals		PropertyChanged(string name, variant value)
 
 			This signal indicates a changed value of the given
 			property.
@@ -195,14 +130,6 @@ properties	string State [readonly]
 
 			Indicates if an audio connection to the headset
 			is active.
-
-		uint16 SpeakerGain  [readwrite]
-
-			The speaker gain when available.
-
-		uint16 MicrophoneGain  [readwrite]
-
-			The speaker gain when available.
 
 
 AudioSink hierarchy
