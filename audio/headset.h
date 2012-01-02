@@ -107,3 +107,6 @@ void headset_shutdown(struct audio_device *dev);
 void headset_slc_complete(struct audio_device *dev);
 void headset_set_connecting_agent(struct audio_device *dev, void *agent);
 void *headset_get_connecting_agent(struct audio_device *dev);
+void headset_set_media_transport_path(struct audio_device *dev,
+							const char *path);
+const char *headset_get_telephony_agent_name(struct audio_device *dev);

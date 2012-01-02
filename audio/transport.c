@@ -833,8 +833,9 @@ static DBusMessage *set_property(DBusConnection *conn, DBusMessage *msg,
 	struct media_transport *transport = data;
 	DBusMessageIter iter;
 	DBusMessageIter value;
-	const char *property, *sender;
+	const char *property, *sender, *tel_agent;
 	GSList *l;
+	gboolean sender_ok = FALSE;
 	int err;
 
 	if (!dbus_message_iter_init(msg, &iter))
@@ -858,11 +859,18 @@ static DBusMessage *set_property(DBusConnection *conn, DBusMessage *msg,
 		struct media_owner *owner = l->data;
 
 		if (g_strcmp0(owner->name, sender) == 0) {
-			err = transport->set_property(transport, property,
-								&value);
+			sender_ok = TRUE;
 			break;
 		}
 	}
+
+	/* Check if Telephony agent does this request */
+	tel_agent = headset_get_telephony_agent_name(transport->device);
+	if (tel_agent != NULL && g_strcmp0(tel_agent, sender) == 0)
+		sender_ok = TRUE;
+
+	if (sender_ok)
+		err = transport->set_property(transport, property, &value);
 
 	if (err < 0) {
 		if (err == -EINVAL)

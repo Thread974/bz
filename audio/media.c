@@ -440,6 +440,7 @@ static void headset_state_changed(struct audio_device *dev,
 					void *user_data)
 {
 	struct media_endpoint *endpoint = user_data;
+	const char *path;
 
 	DBG("");
 
@@ -455,6 +456,8 @@ static void headset_state_changed(struct audio_device *dev,
 	case HEADSET_STATE_CONNECTING:
 		set_configuration(endpoint, dev, NULL, 0, headset_setconf_cb,
 								dev, NULL);
+		path = media_transport_get_path(endpoint->transport);
+		headset_set_media_transport_path(dev, path);
 		break;
 	case HEADSET_STATE_CONNECTED:
 		break;
@@ -669,14 +672,18 @@ static struct media_endpoint *media_endpoint_create(struct media_adapter *adapte
 	} else if (strcasecmp(uuid, HFP_AG_UUID) == 0 ||
 					strcasecmp(uuid, HSP_AG_UUID) == 0) {
 		struct audio_device *dev;
+		const char *t_path;
 
 		endpoint->hs_watch = headset_add_state_cb(headset_state_changed,
 								endpoint);
 		dev = manager_find_device(NULL, &adapter->src, BDADDR_ANY,
 						AUDIO_HEADSET_INTERFACE, TRUE);
-		if (dev)
+		if (dev) {
 			set_configuration(endpoint, dev, NULL, 0,
 						headset_setconf_cb, dev, NULL);
+			t_path = media_transport_get_path(endpoint->transport);
+			headset_set_media_transport_path(dev, t_path);
+		}
 	} else if (strcasecmp(uuid, HFP_HS_UUID) == 0 ||
 					strcasecmp(uuid, HSP_HS_UUID) == 0) {
 		struct audio_device *dev;

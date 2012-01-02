@@ -52,6 +52,8 @@ void *telephony_device_connecting(GIOChannel *io, void *telephony_device);
 void telephony_device_connected(void *telephony_device);
 void telephony_device_disconnect(void *slc);
 void telephony_device_disconnected(void *telephony_device);
+void telephony_set_media_transport_path(void *slc, const char *path);
+const char *telephony_get_agent_name(void *slc);
 
 gboolean telephony_get_ready_state(void);
 void *telephony_agent_by_uuid(const char *uuid);
