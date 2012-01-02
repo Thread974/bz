@@ -154,14 +154,8 @@ builtin_sources += audio/main.c \
 			audio/unix.h audio/unix.c \
 			audio/media.h audio/media.c \
 			audio/transport.h audio/transport.c \
-			audio/telephony.h audio/a2dp-codecs.h
-builtin_nodist += audio/telephony.c
-
-noinst_LIBRARIES += audio/libtelephony.a
-
-audio_libtelephony_a_SOURCES = audio/telephony.h audio/telephony-dummy.c \
-				audio/telephony-maemo5.c audio/telephony-ofono.c \
-				audio/telephony-maemo6.c
+			audio/telephony.h audio/telephony.c \
+			audio/a2dp-codecs.h
 endif
 
 if SAPPLUGIN
@@ -479,9 +473,6 @@ MAINTAINERCLEANFILES = Makefile.in \
 
 src/builtin.h: src/genbuiltin $(builtin_sources)
 	$(AM_V_GEN)$(srcdir)/src/genbuiltin $(builtin_modules) > $@
-
-audio/telephony.c: audio/@TELEPHONY_DRIVER@
-	$(AM_V_GEN)$(LN_S) $(abs_top_builddir)/$< $@
 
 sap/sap.c: sap/@SAP_DRIVER@
 	$(AM_V_GEN)$(LN_S) $(abs_top_srcdir)/$< $@

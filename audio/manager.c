@@ -880,7 +880,7 @@ static void state_changed(struct btd_adapter *adapter, gboolean powered)
 		/* telephony driver already initialized*/
 		if (telephony == TRUE)
 			return;
-		telephony_init();
+		telephony_init(adapter);
 		telephony = TRUE;
 		return;
 	}
@@ -896,7 +896,7 @@ static void state_changed(struct btd_adapter *adapter, gboolean powered)
 			return;
 	}
 
-	telephony_exit();
+	telephony_exit(adapter);
 	telephony = FALSE;
 }
 

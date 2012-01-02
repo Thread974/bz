@@ -456,3 +456,94 @@ properties	boolean Connected [readonly]
 		uint16 MicrophoneGain  [readonly]
 
 			The speaker gain when available.
+
+
+Telephony hierarchy [experiemental]
+===================
+
+Service		org.bluez
+Interface	org.bluez.Telephony
+Object path	[variable prefix]/{hci0,hci1,...}
+
+Methods		void RegisterAgent(object path, dict properties)
+
+			Register a TelephonyAgent to sender, the sender can
+			register as many agents as it likes.
+
+			Note: If the sender disconnects its agents are
+			automatically unregistered.
+
+			possible properties:
+
+				string UUID:
+
+					UUID of the profile which the agent is
+					for.
+
+				uint16 Version:
+
+					Version of the profile which the agent
+					implements.
+
+				uint16 Features:
+
+					Agent supported features as defined in
+					profile spec e.g. HFP.
+
+			Possible Errors: org.bluez.Error.InvalidArguments
+
+
+		void UnregisterAgent(object path)
+
+			Unregister sender agent.
+
+TelephonyAgent hierarchy
+========================
+
+Service		unique name
+Interface	org.bluez.TelephonyAgent
+Object path	freely definable
+
+Methods		void NewConnection(filedescriptor fd, dict properties)
+
+			This method gets called whenever a new connection
+			has been established. This method assumes that DBus
+			daemon with file descriptor passing capability is
+			being used.
+
+			The agent should only return successfully once the
+			establishment of the service level connection (SLC)
+			has been completed.  In the case of Handsfree this
+			means that BRSF exchange has been performed and
+			necessary initialization has been done.
+
+			possible properties:
+
+				strict Device:
+
+					BlueZ remote device object.
+
+				string UUID:
+
+					Profile UUID of the connection.
+
+				uint16 Version:
+
+					Remote profile version.
+
+				uint16 Features:
+
+					Remote profile features.
+
+				object Transport:
+
+					Optional. MediaTransport object path.
+
+			Possible Errors: org.bluez.Error.InvalidArguments
+					 org.bluez.Error.Failed
+
+		void Release()
+
+			This method gets called whenever the service daemon
+			unregisters the agent or whenever the Adapter where
+			the TelephonyAgent registers itself is removed.
