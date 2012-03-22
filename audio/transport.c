@@ -868,12 +868,40 @@ static void get_properties_a2dp(struct media_transport *transport,
 						DBusMessageIter *dict)
 {
 	struct a2dp_transport *a2dp = transport->data;
+	struct audio_device *device = transport->device;
+	uint8_t codecs[8];
+	void *pcodecs = codecs;
+	int ncodecs = 0, seid = 1;
+	struct avdtp_remote_sep *sep;
+	struct avdtp_service_capability *cap;
+	struct avdtp_media_codec_capability *ccap;
 
 	dict_append_entry(dict, "Delay", DBUS_TYPE_UINT16, &a2dp->delay);
 
 	if (a2dp->volume <= 127)
 		dict_append_entry(dict, "Volume", DBUS_TYPE_UINT16,
 							&a2dp->volume);
+
+	if (a2dp->session == NULL)
+		a2dp->session = avdtp_get(&device->src, &device->dst);
+
+	if (a2dp->session == NULL)
+		return;
+
+	sep = avdtp_get_remote_sep(a2dp->session, seid);
+	while (sep) {
+		cap = avdtp_get_codec(sep);
+		ccap = (struct avdtp_media_codec_capability *) cap->data;
+
+		codecs[ncodecs++] = ccap->media_codec_type;
+
+		seid++;
+		sep = avdtp_get_remote_sep(a2dp->session, seid);
+	}
+
+	if (ncodecs > 0)
+		dict_append_array(dict, "Codecs",
+					DBUS_TYPE_BYTE, &pcodecs, ncodecs);
 }
 
 static void get_properties_headset(struct media_transport *transport,
