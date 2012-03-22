@@ -286,6 +286,12 @@ Methods		dict GetProperties()
 
 			Releases file descriptor.
 
+		void RequestTransport(object endpoint)  [experimental]
+
+			Request a transport using the specified endpoint.
+			The endpoint will be reconfigured and a new transport
+			may be created.
+
 		void SetProperty(string name, variant value)
 
 			Changes the value of the specified property. Only
