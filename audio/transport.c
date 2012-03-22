@@ -52,6 +52,7 @@
 struct media_request {
 	DBusMessage		*msg;
 	guint			id;
+	DBusConnection		*conn;
 };
 
 struct media_owner {
@@ -864,11 +865,124 @@ static DBusMessage *set_property(DBusConnection *conn, DBusMessage *msg,
 	return g_dbus_create_reply(msg, DBUS_TYPE_INVALID);
 }
 
+static GSList *handle_a2dp_transport(uint8_t codec)
+{
+	struct avdtp_service_capability *media_transport, *media_codec;
+	struct sbc_codec_cap sbc_cap;
+	struct mpeg_codec_cap mpg_cap;
+	GSList *caps = NULL;
+
+	if (codec == A2DP_CODEC_MPEG12) {
+		memset(&mpg_cap, 0, sizeof(mpg_cap));
+
+		/* FIXME: this code says MP3 and hope the receiver accept */
+		mpg_cap.cap.media_type = AVDTP_MEDIA_TYPE_AUDIO;
+		mpg_cap.cap.media_codec_type = A2DP_CODEC_MPEG12;
+		mpg_cap.channel_mode = 1; /* JS */
+		mpg_cap.crc = 0;
+		mpg_cap.layer = 1; /* L3 */
+		mpg_cap.frequency = (1 << 1); /* 44100 */
+		mpg_cap.mpf = 0;
+		mpg_cap.bitrate = 0x10;
+
+		media_codec = avdtp_service_cap_new(AVDTP_MEDIA_CODEC, &mpg_cap,
+							sizeof(mpg_cap));
+
+		DBG("Handling switch to MPEG transport");
+	} else if (codec == A2DP_CODEC_SBC) {
+		memset(&sbc_cap, 0, sizeof(sbc_cap));
+
+		/* FIXME: this is the mandatory SBC params for a source */
+		sbc_cap.cap.media_type = AVDTP_MEDIA_TYPE_AUDIO;
+		sbc_cap.cap.media_codec_type = A2DP_CODEC_SBC;
+		sbc_cap.channel_mode = 1; /* JS */
+		sbc_cap.frequency = (1 << 1); /* 44100 */
+		sbc_cap.allocation_method = 1; /* loudness */
+		sbc_cap.subbands = 1; /* 8 */
+		sbc_cap.block_length = 1; /* 16 */
+		sbc_cap.min_bitpool = 53;
+		sbc_cap.max_bitpool = 53;
+
+		media_codec = avdtp_service_cap_new(AVDTP_MEDIA_CODEC, &sbc_cap,
+							sizeof(sbc_cap));
+
+		DBG("Handling switch to SBC transport");
+	} else
+		return NULL;
+
+	media_transport = avdtp_service_cap_new(AVDTP_MEDIA_TRANSPORT,
+						NULL, 0);
+
+	caps = g_slist_append(caps, media_transport);
+	caps = g_slist_append(caps, media_codec);
+
+	return caps;
+}
+
+static void a2dp_reconfigure_complete(struct avdtp *session, struct a2dp_sep *sep,
+					struct avdtp_stream *stream,
+					struct avdtp_error *err,
+					void *user_data)
+{
+	struct media_request *req = user_data;
+
+	media_request_reply(req, req->conn, err ? ENOTSUP : 0);
+
+	dbus_connection_unref(req->conn);
+
+	g_free(req);
+}
+
+static void media_transport_reconfigure(struct avdtp *session, const char *path,
+						struct media_request *req)
+{
+	int err;
+	GSList *caps;
+	uint8_t codec;
+	struct media_endpoint *endpoint;
+	struct a2dp_sep *sep;
+
+	endpoint = media_endpoint_find(path);
+	if (endpoint == NULL) {
+		err = -EEXIST;
+		goto failed;
+	}
+	sep = media_endpoint_get_sep(endpoint);
+	codec = media_endpoint_get_codec(endpoint);
+
+	DBG(" sep %p creating caps list for codec %d", sep, codec);
+
+	/* FIXME prevent usage on SCO transport */
+	caps = handle_a2dp_transport(codec);
+	if (caps == NULL) {
+		err = -EINVAL;
+		goto failed;
+	}
+
+	err = a2dp_config(session, sep, a2dp_reconfigure_complete,
+					caps, req);
+	if (err < 0)
+		goto failed;
+
+	req->id = err;
+	return;
+
+failed:
+	media_request_reply(req, req->conn, -err);
+
+	dbus_connection_unref(req->conn);
+
+	g_free(req);
+}
+
 static DBusMessage *reconfigure(DBusConnection *conn, DBusMessage *msg,
 								void *data)
 {
+	struct media_transport *transport = data;
+	struct a2dp_transport *a2dp = transport->data;
 	DBusMessageIter iter;
 	const char *endpoint;
+	struct media_request *req;
 
 	if (!dbus_message_iter_init(msg, &iter))
 		return btd_error_invalid_args(msg);
@@ -876,6 +990,9 @@ static DBusMessage *reconfigure(DBusConnection *conn, DBusMessage *msg,
 		return btd_error_invalid_args(msg);
 	dbus_message_iter_get_basic(&iter, &endpoint);
 
+	req = media_request_create(msg, 0);
+	req->conn = dbus_connection_ref(conn);
+	media_transport_reconfigure(a2dp->session, endpoint, req);
 
 	return NULL;
 }
@@ -892,19 +1009,19 @@ static void get_properties_a2dp(struct media_transport *transport,
 	struct avdtp_service_capability *cap;
 	struct avdtp_media_codec_capability *ccap;
 
-	dict_append_entry(dict, "Delay", DBUS_TYPE_UINT16, &transport->delay);
+	dict_append_entry(dict, "Delay", DBUS_TYPE_UINT16, &a2dp->delay);
 
 	if (a2dp->volume <= 127)
 		dict_append_entry(dict, "Volume", DBUS_TYPE_UINT16,
 							&a2dp->volume);
 
-	if (transport->session == NULL)
-		transport->session = avdtp_get(&device->src, &device->dst);
+	if (a2dp->session == NULL)
+		a2dp->session = avdtp_get(&device->src, &device->dst);
 
-	if (transport->session == NULL)
+	if (a2dp->session == NULL)
 		return;
 
-	sep = avdtp_get_remote_sep(transport->session, seid);
+	sep = avdtp_get_remote_sep(a2dp->session, seid);
 	while (sep) {
 		cap = avdtp_get_codec(sep);
 		ccap = (struct avdtp_media_codec_capability *) cap->data;
@@ -912,7 +1029,7 @@ static void get_properties_a2dp(struct media_transport *transport,
 		codecs[ncodecs++] = ccap->media_codec_type;
 
 		seid++;
-		sep = avdtp_get_remote_sep(transport->session, seid);
+		sep = avdtp_get_remote_sep(a2dp->session, seid);
 	}
 
 	if (ncodecs > 0)
