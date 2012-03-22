@@ -864,6 +864,22 @@ static DBusMessage *set_property(DBusConnection *conn, DBusMessage *msg,
 	return g_dbus_create_reply(msg, DBUS_TYPE_INVALID);
 }
 
+static DBusMessage *request_transport(DBusConnection *conn, DBusMessage *msg,
+								void *data)
+{
+	DBusMessageIter iter;
+	const char *path;
+
+	if (!dbus_message_iter_init(msg, &iter))
+		return btd_error_invalid_args(msg);
+	if (dbus_message_iter_get_arg_type(&iter) != DBUS_TYPE_STRING)
+		return btd_error_invalid_args(msg);
+	dbus_message_iter_get_basic(&iter, &path);
+
+
+	return NULL;
+}
+
 static void get_properties_a2dp(struct media_transport *transport,
 						DBusMessageIter *dict)
 {
@@ -990,6 +1006,9 @@ static const GDBusMethodTable transport_methods[] = {
 	{ GDBUS_METHOD("SetProperty",
 			GDBUS_ARGS({ "name", "s" }, { "value", "v" }),
 			NULL, set_property) },
+	{ GDBUS_ASYNC_METHOD("RequestTransport",
+			GDBUS_ARGS({ "endpoint", "s" }),
+			NULL, request_transport) },
 	{ },
 };
 
