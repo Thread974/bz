@@ -312,6 +312,12 @@ Properties	object Device [readonly]
 			The values should match the profile specification which
 			is indicated by the UUID.
 
+		array{byte} Codecs [readonly, experimental]
+
+			Codecs list, contains assigned numbers for all codecs
+			that the transport support. The values should match the
+			profile specification which is indicated by the UUID.
+
 		array{byte} Configuration [readonly]
 
 			Configuration blob, it is used as it is so the size and
