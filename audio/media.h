@@ -33,3 +33,4 @@ void media_unregister(const char *path);
 struct a2dp_sep *media_endpoint_get_sep(struct media_endpoint *endpoint);
 const char *media_endpoint_get_uuid(struct media_endpoint *endpoint);
 uint8_t media_endpoint_get_codec(struct media_endpoint *endpoint);
+struct media_endpoint *media_endpoint_find(const char *path);
