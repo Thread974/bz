@@ -286,6 +286,12 @@ Methods		dict GetProperties()
 
 			Releases file descriptor.
 
+		void Reconfigure(object endpoint)  [experimental]
+
+			Reconfigure the transport to use the specified endpoint.
+			The stream will be reconfigured and the transport
+			recreated.
+
 		void SetProperty(string name, variant value)
 
 			Changes the value of the specified property. Only
