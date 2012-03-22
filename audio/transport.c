@@ -52,6 +52,7 @@
 struct media_request {
 	DBusMessage		*msg;
 	guint			id;
+	DBusConnection		*conn;
 };
 
 struct media_owner {
@@ -100,6 +101,10 @@ struct media_transport {
 					struct media_transport *transport,
 					const char *property,
 					DBusMessageIter *value);
+	void			(*request_transport)(
+					struct media_transport *transport,
+					struct media_endpoint *endpoint,
+					struct media_request *req);
 	GDestroyNotify		destroy;
 	void			*data;
 };
@@ -864,11 +869,63 @@ static DBusMessage *set_property(DBusConnection *conn, DBusMessage *msg,
 	return g_dbus_create_reply(msg, DBUS_TYPE_INVALID);
 }
 
+static void a2dp_reconfigure_complete(struct avdtp *session, struct a2dp_sep *sep,
+					struct avdtp_stream *stream,
+					struct avdtp_error *err,
+					void *user_data)
+{
+	struct media_request *req = user_data;
+
+	media_request_reply(req, req->conn, err ? ENOTSUP : 0);
+
+	dbus_connection_unref(req->conn);
+
+	g_free(req);
+}
+
+static void request_transport_a2dp(struct media_transport *transport,
+		struct media_endpoint *endpoint, struct media_request *req)
+{
+	struct a2dp_transport *a2dp = transport->data;
+	int err;
+	struct a2dp_sep *sep;
+	struct avdtp_service_capability *cap;
+	GSList *caps = NULL;
+
+	sep = media_endpoint_get_sep(endpoint);
+
+	cap = avdtp_service_cap_new(AVDTP_MEDIA_CODEC,
+			media_endpoint_get_caps(endpoint),
+			media_endpoint_get_caps_len(endpoint));
+	caps = g_slist_append(caps, cap);
+
+	cap = avdtp_service_cap_new(AVDTP_MEDIA_TRANSPORT, NULL, 0);
+	caps = g_slist_append(caps, cap);
+
+	err = a2dp_config(a2dp->session, sep, a2dp_reconfigure_complete,
+					caps, req);
+	if (err < 0)
+		goto failed;
+
+	req->id = err;
+	return;
+
+failed:
+	media_request_reply(req, req->conn, -err);
+
+	dbus_connection_unref(req->conn);
+
+	g_free(req);
+}
+
 static DBusMessage *request_transport(DBusConnection *conn, DBusMessage *msg,
 								void *data)
 {
+	struct media_transport *transport = data;
 	DBusMessageIter iter;
 	const char *path;
+	struct media_request *req;
+	struct media_endpoint *endpoint;
 
 	if (!dbus_message_iter_init(msg, &iter))
 		return btd_error_invalid_args(msg);
@@ -876,6 +933,16 @@ static DBusMessage *request_transport(DBusConnection *conn, DBusMessage *msg,
 		return btd_error_invalid_args(msg);
 	dbus_message_iter_get_basic(&iter, &path);
 
+	if (transport->request_transport == NULL)
+		return btd_error_not_supported(msg);
+
+	endpoint = media_endpoint_find(path);
+	if (endpoint == NULL)
+		return btd_error_does_not_exist(msg);
+
+	req = media_request_create(msg, 0);
+	req->conn = dbus_connection_ref(conn);
+	transport->request_transport(transport->data, endpoint, req);
 
 	return NULL;
 }
@@ -1107,6 +1174,7 @@ struct media_transport *media_transport_create(DBusConnection *conn,
 		transport->cancel = cancel_a2dp;
 		transport->get_properties = get_properties_a2dp;
 		transport->set_property = set_property_a2dp;
+		transport->request_transport = request_transport_a2dp;
 		transport->data = a2dp;
 		transport->destroy = destroy_a2dp;
 	} else if (strcasecmp(uuid, HFP_AG_UUID) == 0 ||
