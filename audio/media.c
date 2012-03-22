@@ -1905,3 +1905,19 @@ uint8_t media_endpoint_get_codec(struct media_endpoint *endpoint)
 {
 	return endpoint->codec;
 }
+
+struct media_endpoint *media_endpoint_find(const char *path)
+{
+	GSList *l;
+	struct media_endpoint *endpoint;
+
+	for (l = adapters; l; l = l->next) {
+		struct media_adapter *adapter = l->data;
+
+		endpoint = media_adapter_find_endpoint(adapter,
+							NULL, path, NULL);
+		if (endpoint)
+			return endpoint;
+	}
+	return NULL;
+}
