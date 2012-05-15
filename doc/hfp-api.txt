@@ -22,24 +22,6 @@ Methods		void Connect()
 			Returns all properties for the interface. See the
 			properties section for available properties.
 
-		void RegisterAgent(object path)
-
-			The object path defines the path the of the agent
-			that will be called when a new Handsfree connection
-			is established.
-
-			If an application disconnects from the bus all of its
-			registered agents will be removed.
-
-		void UnregisterAgent(object path)
-
-			This unregisters the agent that has been previously
-			registered. The object path parameter must match the
-			same value that has been used on registration.
-
-			Possible Errors: org.bluez.Error.Failed
-					 org.bluez.Error.InvalidArguments
-
 
 Signals		PropertyChanged(string name, variant value)
 
@@ -54,33 +36,3 @@ Properties	string State [readonly]
 				"connecting"
 				"connected"
 				"playing"
-
-HandsfreeAgent hierarchy
-===============
-
-Service         unique name
-Interface       org.bluez.HandsfreeAgent
-Object path     freely definable
-
-Methods		void NewConnection(filedescriptor fd, uint16 version)
-
-			This method gets called whenever a new handsfree
-			connection has been established.  The objectpath
-			contains the object path of the remote device.  This
-			method assumes that DBus daemon with file descriptor
-			passing capability is being used.
-
-			The agent should only return successfully once the
-			establishment of the service level connection (SLC)
-			has been completed.  In the case of Handsfree this
-			means that BRSF exchange has been performed and
-			necessary initialization has been done.
-
-			Possible Errors: org.bluez.Error.InvalidArguments
-					 org.bluez.Error.Failed
-
-		void Release()
-
-			This method gets called whenever the service daemon
-			unregisters the agent or whenever the Adapter where
-			the HandsfreeAgent registers itself is removed.

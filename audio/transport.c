@@ -837,6 +837,10 @@ static gboolean check_telephony_agent_name(struct media_transport *transport,
 	if (tel_agent != NULL && g_strcmp0(tel_agent, sender) == 0)
 		return TRUE;
 
+	tel_agent = gateway_get_telephony_agent_name(transport->device);
+	if (tel_agent != NULL && g_strcmp0(tel_agent, sender) == 0)
+		return TRUE;
+
 	return FALSE;
 }
 

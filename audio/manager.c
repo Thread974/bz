@@ -94,8 +94,6 @@ typedef enum {
 struct audio_adapter {
 	struct btd_adapter *btd_adapter;
 	gboolean powered;
-	uint32_t hfp_hs_record_id;
-	GIOChannel *hfp_hs_server;
 	gint ref;
 };
 
@@ -226,196 +224,6 @@ static void handle_uuid(const char *uuidstr, struct audio_device *device)
 		DBG("Unrecognized UUID: 0x%04X", uuid16);
 		break;
 	}
-}
-
-static sdp_record_t *hfp_hs_record(uint8_t ch)
-{
-	sdp_list_t *svclass_id, *pfseq, *apseq, *root;
-	uuid_t root_uuid, svclass_uuid, ga_svclass_uuid;
-	uuid_t l2cap_uuid, rfcomm_uuid;
-	sdp_profile_desc_t profile;
-	sdp_record_t *record;
-	sdp_list_t *aproto, *proto[2];
-	sdp_data_t *channel;
-
-	record = sdp_record_alloc();
-	if (!record)
-		return NULL;
-
-	sdp_uuid16_create(&root_uuid, PUBLIC_BROWSE_GROUP);
-	root = sdp_list_append(0, &root_uuid);
-	sdp_set_browse_groups(record, root);
-
-	sdp_uuid16_create(&svclass_uuid, HANDSFREE_SVCLASS_ID);
-	svclass_id = sdp_list_append(0, &svclass_uuid);
-	sdp_uuid16_create(&ga_svclass_uuid, GENERIC_AUDIO_SVCLASS_ID);
-	svclass_id = sdp_list_append(svclass_id, &ga_svclass_uuid);
-	sdp_set_service_classes(record, svclass_id);
-
-	sdp_uuid16_create(&profile.uuid, HANDSFREE_PROFILE_ID);
-	profile.version = 0x0105;
-	pfseq = sdp_list_append(0, &profile);
-	sdp_set_profile_descs(record, pfseq);
-
-	sdp_uuid16_create(&l2cap_uuid, L2CAP_UUID);
-	proto[0] = sdp_list_append(0, &l2cap_uuid);
-	apseq = sdp_list_append(0, proto[0]);
-
-	sdp_uuid16_create(&rfcomm_uuid, RFCOMM_UUID);
-	proto[1] = sdp_list_append(0, &rfcomm_uuid);
-	channel = sdp_data_alloc(SDP_UINT8, &ch);
-	proto[1] = sdp_list_append(proto[1], channel);
-	apseq = sdp_list_append(apseq, proto[1]);
-
-	aproto = sdp_list_append(0, apseq);
-	sdp_set_access_protos(record, aproto);
-
-	sdp_set_info_attr(record, "Hands-Free", 0, 0);
-
-	sdp_data_free(channel);
-	sdp_list_free(proto[0], 0);
-	sdp_list_free(proto[1], 0);
-	sdp_list_free(apseq, 0);
-	sdp_list_free(pfseq, 0);
-	sdp_list_free(aproto, 0);
-	sdp_list_free(root, 0);
-	sdp_list_free(svclass_id, 0);
-
-	return record;
-}
-
-static void gateway_auth_cb(DBusError *derr, void *user_data)
-{
-	struct audio_device *device = user_data;
-
-	if (derr && dbus_error_is_set(derr)) {
-		error("Access denied: %s", derr->message);
-		gateway_set_state(device, GATEWAY_STATE_DISCONNECTED);
-	} else {
-		char ag_address[18];
-
-		ba2str(&device->dst, ag_address);
-		DBG("Accepted AG connection from %s for %s",
-			ag_address, device->path);
-
-		gateway_start_service(device);
-	}
-}
-
-static void hf_io_cb(GIOChannel *chan, gpointer data)
-{
-	bdaddr_t src, dst;
-	GError *err = NULL;
-	uint8_t ch;
-	const char *server_uuid, *remote_uuid;
-	struct audio_device *device;
-	int perr;
-
-	bt_io_get(chan, BT_IO_RFCOMM, &err,
-			BT_IO_OPT_SOURCE_BDADDR, &src,
-			BT_IO_OPT_DEST_BDADDR, &dst,
-			BT_IO_OPT_CHANNEL, &ch,
-			BT_IO_OPT_INVALID);
-
-	if (err) {
-		error("%s", err->message);
-		g_error_free(err);
-		return;
-	}
-
-	server_uuid = HFP_HS_UUID;
-	remote_uuid = HFP_AG_UUID;
-
-	device = manager_get_device(&src, &dst, TRUE);
-	if (!device)
-		goto drop;
-
-	if (!device->gateway) {
-		btd_device_add_uuid(device->btd_dev, remote_uuid);
-		if (!device->gateway)
-			goto drop;
-	}
-
-	if (gateway_is_active(device)) {
-		DBG("Refusing new connection since one already exists");
-		goto drop;
-	}
-
-	if (gateway_connect_rfcomm(device, chan) < 0) {
-		error("Allocating new GIOChannel failed!");
-		goto drop;
-	}
-
-	perr = audio_device_request_authorization(device, server_uuid,
-						gateway_auth_cb, device);
-	if (perr < 0) {
-		DBG("Authorization denied: %s", strerror(-perr));
-		gateway_set_state(device, GATEWAY_STATE_DISCONNECTED);
-	}
-
-	return;
-
-drop:
-	g_io_channel_shutdown(chan, TRUE, NULL);
-}
-
-static int gateway_server_init(struct audio_adapter *adapter)
-{
-	uint8_t chan = DEFAULT_HFP_HS_CHANNEL;
-	sdp_record_t *record;
-	gboolean master = TRUE;
-	GError *err = NULL;
-	GIOChannel *io;
-	bdaddr_t src;
-
-	if (config) {
-		gboolean tmp;
-
-		tmp = g_key_file_get_boolean(config, "General", "Master",
-						&err);
-		if (err) {
-			DBG("audio.conf: %s", err->message);
-			g_clear_error(&err);
-		} else
-			master = tmp;
-	}
-
-	adapter_get_address(adapter->btd_adapter, &src);
-
-	io = bt_io_listen(BT_IO_RFCOMM, NULL, hf_io_cb, adapter, NULL, &err,
-				BT_IO_OPT_SOURCE_BDADDR, &src,
-				BT_IO_OPT_CHANNEL, chan,
-				BT_IO_OPT_SEC_LEVEL, BT_IO_SEC_MEDIUM,
-				BT_IO_OPT_MASTER, master,
-				BT_IO_OPT_INVALID);
-	if (!io) {
-		error("%s", err->message);
-		g_error_free(err);
-		return -1;
-	}
-
-	adapter->hfp_hs_server = io;
-	record = hfp_hs_record(chan);
-	if (!record) {
-		error("Unable to allocate new service record");
-		goto failed;
-	}
-
-	if (add_record_to_server(&src, record) < 0) {
-		error("Unable to register HFP HS service record");
-		sdp_record_free(record);
-		goto failed;
-	}
-
-	adapter->hfp_hs_record_id = record->handle;
-
-	return 0;
-
-failed:
-	g_io_channel_shutdown(adapter->hfp_hs_server, TRUE, NULL);
-	g_io_channel_unref(adapter->hfp_hs_server);
-	adapter->hfp_hs_server = NULL;
-	return -1;
 }
 
 static int audio_probe(struct btd_device *device, GSList *uuids)
@@ -586,17 +394,12 @@ static void headset_server_remove(struct btd_adapter *adapter)
 static int gateway_server_probe(struct btd_adapter *adapter)
 {
 	struct audio_adapter *adp;
-	int err;
 
 	adp = audio_adapter_get(adapter);
 	if (!adp)
 		return -EINVAL;
 
-	err = gateway_server_init(adp);
-	if (err < 0)
-		audio_adapter_unref(adp);
-
-	return err;
+	return 0;
 }
 
 static void gateway_server_remove(struct btd_adapter *adapter)
@@ -609,17 +412,6 @@ static void gateway_server_remove(struct btd_adapter *adapter)
 	adp = find_adapter(adapters, adapter);
 	if (!adp)
 		return;
-
-	if (adp->hfp_hs_record_id) {
-		remove_record_from_server(adp->hfp_hs_record_id);
-		adp->hfp_hs_record_id = 0;
-	}
-
-	if (adp->hfp_hs_server) {
-		g_io_channel_shutdown(adp->hfp_hs_server, TRUE, NULL);
-		g_io_channel_unref(adp->hfp_hs_server);
-		adp->hfp_hs_server = NULL;
-	}
 
 	audio_adapter_unref(adp);
 }

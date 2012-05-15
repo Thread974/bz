@@ -646,6 +646,7 @@ static void gateway_state_changed(struct audio_device *dev,
 {
 	struct media_endpoint *endpoint = user_data;
 	struct media_transport *transport;
+	const char *path;
 
 	DBG("");
 
@@ -660,6 +661,13 @@ static void gateway_state_changed(struct audio_device *dev,
 	case GATEWAY_STATE_CONNECTING:
 		set_configuration(endpoint, dev, NULL, 0,
 					gateway_setconf_cb, dev, NULL);
+
+		transport = find_device_transport(endpoint, dev);
+		if (transport == NULL)
+			break;
+
+		path = media_transport_get_path(transport);
+		gateway_set_media_transport_path(dev, path);
 		break;
 	case GATEWAY_STATE_CONNECTED:
 		break;
@@ -739,9 +747,18 @@ static gboolean endpoint_init_hs(struct media_endpoint *endpoint, int *err)
 
 	for (l = list; l != NULL; l = l->next) {
 		struct audio_device *dev = l->data;
+		struct media_transport *transport;
+		const char *path;
 
 		set_configuration(endpoint, dev, NULL, 0,
 						gateway_setconf_cb, dev, NULL);
+
+		transport = find_device_transport(endpoint, dev);
+		if (transport == NULL)
+			break;
+
+		path = media_transport_get_path(transport);
+		gateway_set_media_transport_path(dev, path);
 	}
 
 	g_slist_free(list);

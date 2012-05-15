@@ -44,6 +44,7 @@
 #include "glib-helper.h"
 #include "sdp-client.h"
 #include "headset.h"
+#include "gateway.h"
 #include "telephony.h"
 #include "dbus-common.h"
 #include "../src/adapter.h"
@@ -295,6 +296,46 @@ done:
 	dbus_message_unref(reply);
 }
 
+static gboolean ag_dev_disconnect_cb(GIOChannel *chan, GIOCondition cond,
+						struct tel_device *dev)
+{
+	if (cond & G_IO_NVAL)
+		return FALSE;
+
+	gateway_set_state(dev->au_dev, GATEWAY_STATE_DISCONNECTED);
+
+	return FALSE;
+}
+
+static void ag_newconnection_reply(DBusPendingCall *call, void *user_data)
+{
+	struct tel_device *dev = user_data;
+	DBusMessage *reply = dbus_pending_call_steal_reply(call);
+	DBusError derr;
+
+	if (!dev->rfcomm) {
+		DBG("RFCOMM disconnected from server before agent reply");
+		goto done;
+	}
+
+	dbus_error_init(&derr);
+	if (!dbus_set_error_from_message(&derr, reply)) {
+		DBG("Agent reply: file descriptor passed successfully");
+		g_io_add_watch(dev->rfcomm, G_IO_ERR | G_IO_HUP | G_IO_NVAL,
+					(GIOFunc) ag_dev_disconnect_cb, dev);
+		gateway_slc_complete(dev->au_dev);
+		goto done;
+	}
+
+	DBG("Agent reply: %s", derr.message);
+
+	dbus_error_free(&derr);
+	gateway_set_state(dev->au_dev, GATEWAY_STATE_DISCONNECTED);
+
+done:
+	dbus_message_unref(reply);
+}
+
 static void get_record_cb(sdp_list_t *recs, int err, gpointer user_data)
 {
 	struct tel_device *dev = user_data;
@@ -410,6 +451,232 @@ const char *telephony_get_agent_name(void *slc)
 	struct tel_device *dev = slc;
 
 	return dev->name;
+}
+
+#if 0
+static sdp_record_t *hsp_hs_record(struct tel_agent * agent)
+{
+	sdp_list_t *svclass_id, *pfseq, *apseq, *root;
+	uuid_t root_uuid, svclass_uuid, ga_svclass_uuid;
+	uuid_t l2cap_uuid, rfcomm_uuid;
+	sdp_profile_desc_t profile;
+	sdp_record_t *record;
+	sdp_list_t *aproto, *proto[2];
+	sdp_data_t *channel, *volume;
+
+	record = sdp_record_alloc();
+	if (!record)
+		return NULL;
+
+	sdp_uuid16_create(&root_uuid, PUBLIC_BROWSE_GROUP);
+	root = sdp_list_append(0, &root_uuid);
+	sdp_set_browse_groups(record, root);
+
+	sdp_uuid16_create(&svclass_uuid, HEADSET_SVCLASS_ID);
+	svclass_id = sdp_list_append(0, &svclass_uuid);
+	sdp_uuid16_create(&ga_svclass_uuid, GENERIC_AUDIO_SVCLASS_ID);
+	svclass_id = sdp_list_append(svclass_id, &ga_svclass_uuid);
+	sdp_set_service_classes(record, svclass_id);
+
+	sdp_uuid16_create(&profile.uuid, HEADSET_PROFILE_ID);
+	profile.version = agent->version;
+	pfseq = sdp_list_append(0, &profile);
+	sdp_set_profile_descs(record, pfseq);
+
+	sdp_uuid16_create(&l2cap_uuid, L2CAP_UUID);
+	proto[0] = sdp_list_append(0, &l2cap_uuid);
+	apseq = sdp_list_append(0, proto[0]);
+
+	sdp_uuid16_create(&rfcomm_uuid, RFCOMM_UUID);
+	proto[1] = sdp_list_append(0, &rfcomm_uuid);
+	channel = sdp_data_alloc(SDP_UINT8, &agent->properties->channel);
+	proto[1] = sdp_list_append(proto[1], channel);
+	apseq = sdp_list_append(apseq, proto[1]);
+
+	volume = sdp_data_alloc(SDP_BOOL, &agent->features);
+	sdp_attr_add(record, SDP_ATTR_REMOTE_AUDIO_VOLUME_CONTROL, volume);
+
+	aproto = sdp_list_append(0, apseq);
+	sdp_set_access_protos(record, aproto);
+
+	sdp_set_info_attr(record, "Headset", 0, 0);
+
+	sdp_data_free(channel);
+	sdp_list_free(proto[0], 0);
+	sdp_list_free(proto[1], 0);
+	sdp_list_free(apseq, 0);
+	sdp_list_free(pfseq, 0);
+	sdp_list_free(aproto, 0);
+	sdp_list_free(root, 0);
+	sdp_list_free(svclass_id, 0);
+
+	return record;
+}
+#endif
+
+static sdp_record_t *hfp_hs_record(struct tel_agent * agent)
+{
+	sdp_list_t *svclass_id, *pfseq, *apseq, *root;
+	uuid_t root_uuid, svclass_uuid, ga_svclass_uuid;
+	uuid_t l2cap_uuid, rfcomm_uuid;
+	sdp_profile_desc_t profile;
+	sdp_list_t *aproto, *proto[2];
+	sdp_record_t *record;
+	sdp_data_t *channel, *features;
+	uint16_t sdpfeat;
+
+	record = sdp_record_alloc();
+	if (!record)
+		return NULL;
+
+	sdp_uuid16_create(&root_uuid, PUBLIC_BROWSE_GROUP);
+	root = sdp_list_append(0, &root_uuid);
+	sdp_set_browse_groups(record, root);
+
+	sdp_uuid16_create(&svclass_uuid, HANDSFREE_SVCLASS_ID);
+	svclass_id = sdp_list_append(0, &svclass_uuid);
+	sdp_uuid16_create(&ga_svclass_uuid, GENERIC_AUDIO_SVCLASS_ID);
+	svclass_id = sdp_list_append(svclass_id, &ga_svclass_uuid);
+	sdp_set_service_classes(record, svclass_id);
+
+	sdp_uuid16_create(&profile.uuid, HANDSFREE_PROFILE_ID);
+	profile.version = agent->version;
+	pfseq = sdp_list_append(0, &profile);
+	sdp_set_profile_descs(record, pfseq);
+
+	sdp_uuid16_create(&l2cap_uuid, L2CAP_UUID);
+	proto[0] = sdp_list_append(0, &l2cap_uuid);
+	apseq = sdp_list_append(0, proto[0]);
+
+	sdp_uuid16_create(&rfcomm_uuid, RFCOMM_UUID);
+	proto[1] = sdp_list_append(0, &rfcomm_uuid);
+	channel = sdp_data_alloc(SDP_UINT8, &agent->properties->channel);
+	proto[1] = sdp_list_append(proto[1], channel);
+	apseq = sdp_list_append(apseq, proto[1]);
+
+	sdpfeat = agent->features & 0x1F;
+	features = sdp_data_alloc(SDP_UINT16, &sdpfeat);
+	sdp_attr_add(record, SDP_ATTR_SUPPORTED_FEATURES, features);
+
+	aproto = sdp_list_append(0, apseq);
+	sdp_set_access_protos(record, aproto);
+
+	sdp_set_info_attr(record, "Hands-Free", 0, 0);
+
+	sdp_data_free(channel);
+	sdp_list_free(proto[0], 0);
+	sdp_list_free(proto[1], 0);
+	sdp_list_free(apseq, 0);
+	sdp_list_free(pfseq, 0);
+	sdp_list_free(aproto, 0);
+	sdp_list_free(root, 0);
+	sdp_list_free(svclass_id, 0);
+
+	return record;
+}
+
+static void gateway_auth_cb(DBusError *derr, void *user_data)
+{
+	struct audio_device *device = user_data;
+	GError *err = NULL;
+	GIOChannel *io;
+
+	if (device->gw_preauth_id) {
+		g_source_remove(device->gw_preauth_id);
+		device->gw_preauth_id = 0;
+	}
+
+	if (derr && dbus_error_is_set(derr)) {
+		error("Access denied: %s", derr->message);
+		gateway_set_state(device, GATEWAY_STATE_DISCONNECTED);
+		return;
+	}
+
+	io = gateway_get_rfcomm(device);
+
+	if (!bt_io_accept(io, gateway_connect_cb, device, NULL, &err)) {
+		error("bt_io_accept: %s", err->message);
+		g_error_free(err);
+		gateway_set_state(device, GATEWAY_STATE_DISCONNECTED);
+		return;
+	}
+}
+
+static gboolean gateway_preauth_cb(GIOChannel *chan, GIOCondition cond,
+							gpointer user_data)
+{
+	struct audio_device *device = user_data;
+
+	DBG("Gateway disconnected during authorization");
+
+	audio_device_cancel_authorization(device, gateway_auth_cb, device);
+
+	gateway_set_state(device, GATEWAY_STATE_DISCONNECTED);
+
+	device->gw_preauth_id = 0;
+
+	return FALSE;
+}
+
+static void hf_confirm(GIOChannel *chan, gpointer data)
+{
+	struct tel_agent *agent = data;
+	struct audio_device *device;
+	bdaddr_t src, dst;
+	int perr;
+	GError *err = NULL;
+	uint8_t ch;
+
+	bt_io_get(chan, BT_IO_RFCOMM, &err,
+			BT_IO_OPT_SOURCE_BDADDR, &src,
+			BT_IO_OPT_DEST_BDADDR, &dst,
+			BT_IO_OPT_CHANNEL, &ch,
+			BT_IO_OPT_INVALID);
+	if (err) {
+		error("%s", err->message);
+		g_error_free(err);
+		goto drop;
+	}
+
+	device = manager_get_device(&src, &dst, TRUE);
+	if (!device)
+		goto drop;
+
+	if (!device->gateway) {
+		btd_device_add_uuid(device->btd_dev, agent->properties->r_uuid);
+		if (!device->gateway)
+			goto drop;
+	}
+
+	if (gateway_is_active(device)) {
+		DBG("Refusing new connection since one already exists");
+		goto drop;
+	}
+
+	gateway_set_connecting_uuid(device, agent->properties->uuid);
+
+	if (gateway_connect_rfcomm(device, chan) < 0) {
+		error("Allocating new GIOChannel failed!");
+		goto drop;
+	}
+
+	perr = audio_device_request_authorization(device,
+						agent->properties->uuid,
+						gateway_auth_cb, device);
+	if (perr < 0) {
+		DBG("Authorization denied: %s", strerror(-perr));
+		gateway_set_state(device, GATEWAY_STATE_DISCONNECTED);
+		return;
+	}
+
+	device->gw_preauth_id = g_io_add_watch(chan,
+					G_IO_NVAL | G_IO_HUP | G_IO_ERR,
+					gateway_preauth_cb, device);
+
+	return;
+
+drop:
+	g_io_channel_shutdown(chan, TRUE, NULL);
 }
 
 static sdp_record_t *hsp_ag_record(struct tel_agent * agent)
@@ -673,6 +940,14 @@ static struct default_agent default_properties[] = {
 		hsp_ag_record,
 		ag_confirm,
 		hs_newconnection_reply },
+	{ HFP_HS_UUID,
+		DEFAULT_HF_HS_CHANNEL,
+		HFP_AG_UUID,
+		HANDSFREE_AGW_SVCLASS_ID,
+		HANDSFREE_PROFILE_ID,
+		hfp_hs_record,
+		hf_confirm,
+		ag_newconnection_reply },
 	{ HFP_AG_UUID,
 		DEFAULT_HF_AG_CHANNEL,
 		HFP_HS_UUID,

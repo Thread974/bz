@@ -45,20 +45,17 @@
 #include "sdp-client.h"
 #include "device.h"
 #include "gateway.h"
+#include "telephony.h"
 #include "log.h"
 #include "error.h"
 #include "btio.h"
 #include "dbus-common.h"
+#include "../src/adapter.h"
+#include "../src/device.h"
 
 #ifndef DBUS_TYPE_UNIX_FD
 #define DBUS_TYPE_UNIX_FD -1
 #endif
-
-struct hf_agent {
-	char *name;	/* Bus id */
-	char *path;	/* D-Bus path */
-	guint watch;	/* Disconnect watch */
-};
 
 struct connect_cb {
 	unsigned int id;
@@ -70,12 +67,12 @@ struct gateway {
 	gateway_state_t state;
 	GIOChannel *rfcomm;
 	GIOChannel *sco;
-	GIOChannel *incoming;
+	const char *connecting_uuid;
+	const char *connecting_path;
 	GSList *callbacks;
-	struct hf_agent *agent;
 	DBusMessage *msg;
-	int version;
 	gateway_lock_t lock;
+	void *slc;
 };
 
 struct gateway_state_callback {
@@ -109,16 +106,6 @@ static const char *state2str(gateway_state_t state)
 	}
 }
 
-static void agent_free(struct hf_agent *agent)
-{
-	if (!agent)
-		return;
-
-	g_free(agent->name);
-	g_free(agent->path);
-	g_free(agent);
-}
-
 static void change_state(struct audio_device *dev, gateway_state_t new_state)
 {
 	struct gateway *gw = dev->gateway;
@@ -145,8 +132,19 @@ static void change_state(struct audio_device *dev, gateway_state_t new_state)
 
 void gateway_set_state(struct audio_device *dev, gateway_state_t new_state)
 {
+	struct gateway *gw = dev->gateway;
+
 	switch (new_state) {
 	case GATEWAY_STATE_DISCONNECTED:
+		if (gw->msg) {
+			DBusMessage *reply;
+
+			reply = btd_error_failed(gw->msg, "Connect failed");
+			g_dbus_send_message(dev->conn, reply);
+			dbus_message_unref(gw->msg);
+			gw->msg = NULL;
+		}
+
 		gateway_close(dev);
 		break;
 	case GATEWAY_STATE_CONNECTING:
@@ -154,44 +152,6 @@ void gateway_set_state(struct audio_device *dev, gateway_state_t new_state)
 	case GATEWAY_STATE_PLAYING:
 		break;
 	}
-}
-
-static void agent_disconnect(struct audio_device *dev, struct hf_agent *agent)
-{
-	DBusMessage *msg;
-
-	msg = dbus_message_new_method_call(agent->name, agent->path,
-			"org.bluez.HandsfreeAgent", "Release");
-
-	g_dbus_send_message(dev->conn, msg);
-}
-
-static gboolean agent_sendfd(struct hf_agent *agent, int fd,
-		DBusPendingCallNotifyFunction notify, void *data)
-{
-	struct audio_device *dev = data;
-	struct gateway *gw = dev->gateway;
-	DBusMessage *msg;
-	DBusPendingCall *call;
-
-	msg = dbus_message_new_method_call(agent->name, agent->path,
-			"org.bluez.HandsfreeAgent", "NewConnection");
-
-	dbus_message_append_args(msg, DBUS_TYPE_UNIX_FD, &fd,
-					DBUS_TYPE_UINT16, &gw->version,
-					DBUS_TYPE_INVALID);
-
-	if (dbus_connection_send_with_reply(dev->conn, msg,
-							&call, -1) == FALSE) {
-		dbus_message_unref(msg);
-		return FALSE;
-	}
-
-	dbus_pending_call_set_notify(call, notify, dev, NULL);
-	dbus_pending_call_unref(call);
-	dbus_message_unref(msg);
-
-	return TRUE;
 }
 
 static unsigned int connect_cb_new(struct gateway *gw,
@@ -268,175 +228,54 @@ static void sco_connect_cb(GIOChannel *chan, GError *err, gpointer user_data)
 	run_connect_cb(dev, NULL);
 }
 
-static gboolean rfcomm_disconnect_cb(GIOChannel *chan, GIOCondition cond,
-			struct audio_device *dev)
+void gateway_slc_complete(struct audio_device *dev)
 {
-	if (cond & G_IO_NVAL)
-		return FALSE;
-
-	gateway_close(dev);
-
-	return FALSE;
-}
-
-static void newconnection_reply(DBusPendingCall *call, void *data)
-{
-	struct audio_device *dev = data;
-	struct gateway *gw = dev->gateway;
-	DBusMessage *reply = dbus_pending_call_steal_reply(call);
-	DBusError derr;
-
-	if (!dev->gateway->rfcomm) {
-		DBG("RFCOMM disconnected from server before agent reply");
-		goto done;
-	}
-
-	dbus_error_init(&derr);
-	if (!dbus_set_error_from_message(&derr, reply)) {
-		DBG("Agent reply: file descriptor passed successfully");
-		g_io_add_watch(gw->rfcomm, G_IO_ERR | G_IO_HUP | G_IO_NVAL,
-					(GIOFunc) rfcomm_disconnect_cb, dev);
-		change_state(dev, GATEWAY_STATE_CONNECTED);
-		goto done;
-	}
-
-	DBG("Agent reply: %s", derr.message);
-
-	dbus_error_free(&derr);
-	gateway_close(dev);
-
-done:
-	dbus_message_unref(reply);
-}
-
-static void rfcomm_connect_cb(GIOChannel *chan, GError *err,
-				gpointer user_data)
-{
-	struct audio_device *dev = user_data;
 	struct gateway *gw = dev->gateway;
 	DBusMessage *reply;
-	int sk, ret;
 
-	if (err) {
-		error("connect(): %s", err->message);
-		goto fail;
-	}
+	DBG("Service Level Connection established");
 
-	if (!gw->agent) {
-		error("Handsfree Agent not registered");
-		goto fail;
-	}
-
-	sk = g_io_channel_unix_get_fd(chan);
-
-	if (gw->rfcomm == NULL)
-		gw->rfcomm = g_io_channel_ref(chan);
-
-	ret = agent_sendfd(gw->agent, sk, newconnection_reply, dev);
+	change_state(dev, GATEWAY_STATE_CONNECTED);
 
 	if (!gw->msg)
 		return;
 
-	if (ret)
-		reply = dbus_message_new_method_return(gw->msg);
-	else
-		reply = btd_error_failed(gw->msg, "Can't pass file descriptor");
-
+	reply = dbus_message_new_method_return(gw->msg);
 	g_dbus_send_message(dev->conn, reply);
+	dbus_message_unref(gw->msg);
+	gw->msg = NULL;
+}
+
+void gateway_connect_cb(GIOChannel *chan, GError *err, gpointer user_data)
+{
+	struct audio_device *dev = user_data;
+	struct gateway *gw = dev->gateway;
+	char hs_address[18];
+	void *agent;
+
+	if (err) {
+		error("%s", err->message);
+		goto failed;
+	}
+
+	ba2str(&dev->dst, hs_address);
+
+	if (gw->rfcomm == NULL)
+		gw->rfcomm = g_io_channel_ref(chan);
+
+	agent = telephony_agent_by_uuid(device_get_adapter(dev->btd_dev),
+						gw->connecting_uuid);
+	gw->slc = telephony_device_connecting(chan, dev, agent);
+	gw->connecting_uuid = NULL;
+	telephony_set_media_transport_path(gw->slc, gw->connecting_path);
+	gw->connecting_path = NULL;
+
+	DBG("%s: Connected to %s", dev->path, hs_address);
 
 	return;
 
-fail:
-	if (gw->msg) {
-		DBusMessage *reply;
-		reply = btd_error_failed(gw->msg, "Connect failed");
-		g_dbus_send_message(dev->conn, reply);
-	}
-
-	gateway_close(dev);
-}
-
-static int get_remote_profile_version(sdp_record_t *rec)
-{
-	uuid_t uuid;
-	sdp_list_t *profiles;
-	sdp_profile_desc_t *desc;
-	int ver = 0;
-
-	sdp_uuid16_create(&uuid, HANDSFREE_PROFILE_ID);
-
-	sdp_get_profile_descs(rec, &profiles);
-	if (profiles == NULL)
-		goto done;
-
-	desc = profiles->data;
-
-	if (sdp_uuid16_cmp(&desc->uuid, &uuid) == 0)
-		ver = desc->version;
-
-	sdp_list_free(profiles, free);
-
-done:
-	return ver;
-}
-
-static void get_incoming_record_cb(sdp_list_t *recs, int err,
-					gpointer user_data)
-{
-	struct audio_device *dev = user_data;
-	struct gateway *gw = dev->gateway;
-	GError *gerr = NULL;
-
-	if (err < 0) {
-		error("Unable to get service record: %s (%d)", strerror(-err),
-					-err);
-		goto fail;
-	}
-
-	if (!recs || !recs->data) {
-		error("No records found");
-		goto fail;
-	}
-
-	gw->version = get_remote_profile_version(recs->data);
-	if (gw->version == 0)
-		goto fail;
-
-	rfcomm_connect_cb(gw->incoming, gerr, dev);
-	return;
-
-fail:
-	gateway_close(dev);
-}
-
-static void unregister_incoming(gpointer user_data)
-{
-	struct audio_device *dev = user_data;
-	struct gateway *gw = dev->gateway;
-
-	if (gw->incoming) {
-		g_io_channel_unref(gw->incoming);
-		gw->incoming = NULL;
-	}
-}
-
-static void rfcomm_incoming_cb(GIOChannel *chan, GError *err,
-				gpointer user_data)
-{
-	struct audio_device *dev = user_data;
-	struct gateway *gw = dev->gateway;
-	uuid_t uuid;
-
-	gw->incoming = g_io_channel_ref(chan);
-
-	sdp_uuid16_create(&uuid, HANDSFREE_AGW_SVCLASS_ID);
-	if (bt_search_service(&dev->src, &dev->dst, &uuid,
-						get_incoming_record_cb, dev,
-						unregister_incoming) == 0)
-		return;
-
-	unregister_incoming(dev);
-	gateway_close(dev);
+failed:
+	gateway_set_state(dev, GATEWAY_STATE_DISCONNECTED);
 }
 
 static void get_record_cb(sdp_list_t *recs, int err, gpointer user_data)
@@ -473,13 +312,6 @@ static void get_record_cb(sdp_list_t *recs, int err, gpointer user_data)
 		goto fail;
 	}
 
-	gw->version = get_remote_profile_version(recs->data);
-	if (gw->version == 0) {
-		error("Unable to get profile version from record");
-		err = -EINVAL;
-		goto fail;
-	}
-
 	memcpy(&uuid, classes->data, sizeof(uuid));
 	sdp_list_free(classes, free);
 
@@ -500,7 +332,7 @@ static void get_record_cb(sdp_list_t *recs, int err, gpointer user_data)
 		goto fail;
 	}
 
-	io = bt_io_connect(BT_IO_RFCOMM, rfcomm_connect_cb, dev, NULL, &gerr,
+	io = bt_io_connect(BT_IO_RFCOMM, gateway_connect_cb, dev, NULL, &gerr,
 				BT_IO_OPT_SOURCE_BDADDR, &dev->src,
 				BT_IO_OPT_DEST_BDADDR, &dev->dst,
 				BT_IO_OPT_SEC_LEVEL, BT_IO_SEC_MEDIUM,
@@ -519,6 +351,8 @@ fail:
 		DBusMessage *reply = btd_error_failed(gw->msg,
 					gerr ? gerr->message : strerror(-err));
 		g_dbus_send_message(dev->conn, reply);
+		dbus_message_unref(gw->msg);
+		gw->msg = NULL;
 	}
 
 	gateway_close(dev);
@@ -544,8 +378,16 @@ static DBusMessage *ag_connect(DBusConnection *conn, DBusMessage *msg,
 	struct gateway *gw = au_dev->gateway;
 	int err;
 
-	if (!gw->agent)
+	if (gw->state == GATEWAY_STATE_CONNECTING)
+		return btd_error_in_progress(msg);
+	else if (gw->state > GATEWAY_STATE_CONNECTING)
+		return btd_error_already_connected(msg);
+
+	if (telephony_agent_by_uuid(device_get_adapter(au_dev->btd_dev),
+						HFP_HS_UUID) == NULL)
 		return btd_error_agent_not_available(msg);
+
+	gw->connecting_uuid = HFP_HS_UUID;
 
 	err = get_records(au_dev);
 	if (err < 0)
@@ -611,17 +453,6 @@ static DBusMessage *ag_disconnect(DBusConnection *conn, DBusMessage *msg,
 	return reply;
 }
 
-static void agent_exited(DBusConnection *conn, void *data)
-{
-	struct gateway *gateway = data;
-	struct hf_agent *agent = gateway->agent;
-
-	DBG("Agent %s exited", agent->name);
-
-	agent_free(agent);
-	gateway->agent = NULL;
-}
-
 static DBusMessage *ag_get_properties(DBusConnection *conn, DBusMessage *msg,
 					void *data)
 {
@@ -653,71 +484,10 @@ static DBusMessage *ag_get_properties(DBusConnection *conn, DBusMessage *msg,
 	return reply;
 }
 
-static DBusMessage *register_agent(DBusConnection *conn,
-					DBusMessage *msg, void *data)
-{
-	struct audio_device *device = data;
-	struct gateway *gw = device->gateway;
-	struct hf_agent *agent;
-	const char *path, *name;
-
-	if (gw->agent)
-		return btd_error_already_exists(msg);
-
-	if (!dbus_message_get_args(msg, NULL, DBUS_TYPE_OBJECT_PATH, &path,
-						DBUS_TYPE_INVALID))
-		return btd_error_invalid_args(msg);
-
-	name = dbus_message_get_sender(msg);
-	agent = g_new0(struct hf_agent, 1);
-
-	agent->name = g_strdup(name);
-	agent->path = g_strdup(path);
-
-	agent->watch = g_dbus_add_disconnect_watch(conn, name,
-						agent_exited, gw, NULL);
-
-	gw->agent = agent;
-
-	return dbus_message_new_method_return(msg);
-}
-
-static DBusMessage *unregister_agent(DBusConnection *conn,
-				DBusMessage *msg, void *data)
-{
-	struct audio_device *device = data;
-	struct gateway *gw = device->gateway;
-	const char *path;
-
-	if (!gw->agent)
-		goto done;
-
-	if (strcmp(gw->agent->name, dbus_message_get_sender(msg)) != 0)
-		return btd_error_not_authorized(msg);
-
-	if (!dbus_message_get_args(msg, NULL,
-				DBUS_TYPE_OBJECT_PATH, &path,
-				DBUS_TYPE_INVALID))
-		return btd_error_invalid_args(msg);
-
-	if (strcmp(gw->agent->path, path) != 0)
-		return btd_error_does_not_exist(msg);
-
-	g_dbus_remove_watch(device->conn, gw->agent->watch);
-
-	agent_free(gw->agent);
-	gw->agent = NULL;
-
-done:
-	return dbus_message_new_method_return(msg);
-}
-
 static GDBusMethodTable gateway_methods[] = {
 	{ "Connect", "", "", ag_connect, G_DBUS_METHOD_FLAG_ASYNC },
 	{ "Disconnect", "", "", ag_disconnect, G_DBUS_METHOD_FLAG_ASYNC },
 	{ "GetProperties", "", "a{sv}", ag_get_properties },
-	{ "RegisterAgent", "o", "", register_agent },
-	{ "UnregisterAgent", "o", "", unregister_agent },
 	{ NULL, NULL, NULL, NULL }
 };
 
@@ -741,9 +511,6 @@ static void path_unregister(void *data)
 
 void gateway_unregister(struct audio_device *dev)
 {
-	if (dev->gateway->agent)
-		agent_disconnect(dev, dev->gateway->agent);
-
 	g_dbus_unregister_interface(dev->conn, dev->path,
 						AUDIO_GATEWAY_INTERFACE);
 }
@@ -794,6 +561,45 @@ int gateway_connect_rfcomm(struct audio_device *dev, GIOChannel *io)
 	return 0;
 }
 
+GIOChannel *gateway_get_rfcomm(struct audio_device *dev)
+{
+	struct gateway *gw = dev->gateway;
+
+	return gw->rfcomm;
+}
+
+void gateway_set_connecting_uuid(struct audio_device *dev, const char *uuid)
+{
+	struct gateway *gw = dev->gateway;
+
+	gw->connecting_uuid = uuid;
+}
+
+void gateway_set_media_transport_path(struct audio_device *dev,
+							const char *path)
+{
+	struct gateway *gw = dev->gateway;
+
+	DBG("MediaTransport path: %s", path);
+
+	if (gw->slc == NULL) {
+		gw->connecting_path = path;
+		return;
+	}
+
+	telephony_set_media_transport_path(gw->slc, path);
+}
+
+const char *gateway_get_telephony_agent_name(struct audio_device *dev)
+{
+	struct gateway *gw = dev->gateway;
+
+	if (gw == NULL || gw->slc == NULL)
+		return NULL;
+
+	return telephony_get_agent_name(gw->slc);
+}
+
 int gateway_connect_sco(struct audio_device *dev, GIOChannel *io)
 {
 	struct gateway *gw = dev->gateway;
@@ -809,21 +615,6 @@ int gateway_connect_sco(struct audio_device *dev, GIOChannel *io)
 	change_state(dev, GATEWAY_STATE_PLAYING);
 
 	return 0;
-}
-
-void gateway_start_service(struct audio_device *dev)
-{
-	struct gateway *gw = dev->gateway;
-	GError *err = NULL;
-
-	if (gw->rfcomm == NULL)
-		return;
-
-	if (!bt_io_accept(gw->rfcomm, rfcomm_incoming_cb, dev, NULL, &err)) {
-		error("bt_io_accept: %s", err->message);
-		g_error_free(err);
-		gateway_close(dev);
-	}
 }
 
 static gboolean request_stream_cb(gpointer data)

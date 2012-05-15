@@ -74,3 +74,11 @@ gboolean gateway_remove_state_cb(unsigned int id);
 gateway_lock_t gateway_get_lock(struct audio_device *dev);
 gboolean gateway_lock(struct audio_device *dev, gateway_lock_t lock);
 gboolean gateway_unlock(struct audio_device *dev, gateway_lock_t lock);
+
+void gateway_connect_cb(GIOChannel *chan, GError *err, gpointer user_data);
+void gateway_slc_complete(struct audio_device *dev);
+void gateway_set_connecting_uuid(struct audio_device *dev, const char *uuid);
+GIOChannel *gateway_get_rfcomm(struct audio_device *dev);
+void gateway_set_media_transport_path(struct audio_device *dev,
+							const char *path);
+const char *gateway_get_telephony_agent_name(struct audio_device *dev);
