@@ -326,18 +326,23 @@ Properties	object Device [readonly]
 		boolean NREC [readwrite]
 
 			Optional. Indicates if echo cancelling and noise
-			reduction functions are active in the transport, this
-			property is only writeable when the transport was
-			acquired by the sender.
+			reduction functions are active in the transport.
 
 		boolean InbandRingtone [readwrite]
 
 			Optional. Indicates if the transport support sending
-			ringtones, this property is only writeable when the
-			transport was acquired by the sender.
+			ringtones.
 
 		string Routing [readonly]
 
 			Optional. Indicates where is the transport being routed
 
 			Possible Values: "HCI" or "PCM"
+
+		uint16 SpeakerGain  [readwrite]
+
+			Optional. The speaker gain when available.
+
+		uint16 MicrophoneGain  [readwrite]
+
+			Optional. The microphone gain when available.

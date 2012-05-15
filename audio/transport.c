@@ -76,7 +76,10 @@ struct media_transport {
 	uint16_t		imtu;		/* Transport input mtu */
 	uint16_t		omtu;		/* Transport output mtu */
 	uint16_t		delay;		/* Transport delay (a2dp only) */
-	unsigned int		nrec_id;	/* Transport nrec watch (headset only) */
+	gboolean		nrec;		/* Transport nrec (headset only) */
+	gboolean		inband;		/* Transport inband ringtone (headset only) */
+	uint16_t		sp_gain;	/* Transport speaker gain (headset only) */
+	uint16_t		mic_gain;	/* Transport mic gain (headset only) */
 	gboolean		read_lock;
 	gboolean		write_lock;
 	gboolean		in_use;
@@ -762,25 +765,59 @@ static int set_property_headset(struct media_transport *transport,
 						DBusMessageIter *value)
 {
 	if (g_strcmp0(property, "NREC") == 0) {
-		gboolean nrec;
-
 		if (dbus_message_iter_get_arg_type(value) != DBUS_TYPE_BOOLEAN)
 			return -EINVAL;
-		dbus_message_iter_get_basic(value, &nrec);
+		dbus_message_iter_get_basic(value, &transport->nrec);
 
-		/* FIXME: set new nrec */
+		emit_property_changed(transport->conn, transport->path,
+					MEDIA_TRANSPORT_INTERFACE, "NREC",
+					DBUS_TYPE_BOOLEAN, &transport->nrec);
 		return 0;
 	} else if (g_strcmp0(property, "InbandRingtone") == 0) {
-		gboolean inband;
-
 		if (dbus_message_iter_get_arg_type(value) != DBUS_TYPE_BOOLEAN)
 			return -EINVAL;
-		dbus_message_iter_get_basic(value, &inband);
+		dbus_message_iter_get_basic(value, &transport->inband);
 
-		/* FIXME: set new inband */
+		emit_property_changed(transport->conn, transport->path,
+					MEDIA_TRANSPORT_INTERFACE,
+					"InbandRingtone",
+					DBUS_TYPE_BOOLEAN, &transport->inband);
+		return 0;
+	} else if (g_strcmp0(property, "SpeakerGain") == 0) {
+		uint16_t gain;
+
+		if (dbus_message_iter_get_arg_type(value) != DBUS_TYPE_UINT16)
+			return -EINVAL;
+		dbus_message_iter_get_basic(value, &gain);
+
+		if (gain > 15)
+			goto failed;
+
+		transport->sp_gain = gain;
+		emit_property_changed(transport->conn, transport->path,
+					MEDIA_TRANSPORT_INTERFACE,
+					"SpeakerGain", DBUS_TYPE_UINT16,
+					&transport->sp_gain);
+		return 0;
+	} else if (g_strcmp0(property, "MicrophoneGain") == 0) {
+		uint16_t gain;
+
+		if (dbus_message_iter_get_arg_type(value) != DBUS_TYPE_UINT16)
+			return -EINVAL;
+		dbus_message_iter_get_basic(value, &gain);
+
+		if (gain > 15)
+			goto failed;
+
+		transport->mic_gain = gain;
+		emit_property_changed(transport->conn, transport->path,
+					MEDIA_TRANSPORT_INTERFACE,
+					"MicrophoneGain", DBUS_TYPE_UINT16,
+					&transport->mic_gain);
 		return 0;
 	}
 
+failed:
 	return -EINVAL;
 }
 
@@ -846,14 +883,15 @@ static void get_properties_a2dp(struct media_transport *transport,
 static void get_properties_headset(struct media_transport *transport,
 						DBusMessageIter *dict)
 {
-	gboolean nrec, inband;
 	const char *routing;
 
-	nrec = headset_get_nrec(transport->device);
-	dict_append_entry(dict, "NREC", DBUS_TYPE_BOOLEAN, &nrec);
-
-	inband = headset_get_inband(transport->device);
-	dict_append_entry(dict, "InbandRingtone", DBUS_TYPE_BOOLEAN, &inband);
+	dict_append_entry(dict, "NREC", DBUS_TYPE_BOOLEAN, &transport->nrec);
+	dict_append_entry(dict, "InbandRingtone", DBUS_TYPE_BOOLEAN,
+						&transport->inband);
+	dict_append_entry(dict, "SpeakerGain", DBUS_TYPE_UINT16,
+						&transport->sp_gain);
+	dict_append_entry(dict, "MicrophoneGain", DBUS_TYPE_UINT16,
+						&transport->mic_gain);
 
 	routing = headset_get_sco_hci(transport->device) ? "HCI" : "PCM";
 	dict_append_entry(dict, "Routing", DBUS_TYPE_STRING, &routing);
@@ -945,27 +983,12 @@ static void media_transport_free(void *data)
 	if (transport->session)
 		avdtp_unref(transport->session);
 
-	if (transport->nrec_id)
-		headset_remove_nrec_cb(transport->device, transport->nrec_id);
-
 	if (transport->conn)
 		dbus_connection_unref(transport->conn);
 
 	g_free(transport->configuration);
 	g_free(transport->path);
 	g_free(transport);
-}
-
-static void headset_nrec_changed(struct audio_device *dev, gboolean nrec,
-							void *user_data)
-{
-	struct media_transport *transport = user_data;
-
-	DBG("");
-
-	emit_property_changed(transport->conn, transport->path,
-				MEDIA_TRANSPORT_INTERFACE, "NREC",
-				DBUS_TYPE_BOOLEAN, &nrec);
 }
 
 struct media_transport *media_transport_create(DBusConnection *conn,
@@ -1003,9 +1026,7 @@ struct media_transport *media_transport_create(DBusConnection *conn,
 		transport->cancel = cancel_headset;
 		transport->get_properties = get_properties_headset;
 		transport->set_property = set_property_headset;
-		transport->nrec_id = headset_add_nrec_cb(device,
-							headset_nrec_changed,
-							transport);
+		transport->nrec = TRUE;
 	} else if (strcasecmp(uuid, HFP_HS_UUID) == 0 ||
 			strcasecmp(uuid, HSP_HS_UUID) == 0) {
 		transport->resume = resume_gateway;

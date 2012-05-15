@@ -260,8 +260,10 @@ static uint8_t headset_generate_capability(struct audio_device *dev,
 	pcm = (void *) codec;
 	pcm->sampling_rate = 8000;
 	if (dev->headset) {
+#if 0
 		if (headset_get_nrec(dev))
 			pcm->flags |= BT_PCM_FLAG_NREC;
+#endif
 		if (!headset_get_sco_hci(dev))
 			pcm->flags |= BT_PCM_FLAG_PCM_ROUTING;
 		codec->configured = headset_is_active(dev);

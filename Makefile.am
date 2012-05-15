@@ -319,9 +319,7 @@ endif
 EXTRA_DIST += src/genbuiltin src/bluetooth.conf \
 			src/main.conf network/network.conf \
 			input/input.conf serial/serial.conf \
-			audio/audio.conf audio/telephony-dummy.c \
-			audio/telephony-maemo5.c audio/telephony-ofono.c \
-			audio/telephony-maemo6.c sap/sap-dummy.c sap/sap-u8500.c \
+			audio/audio.conf sap/sap-dummy.c sap/sap-u8500.c \
 			proximity/proximity.conf
 
 if ALSA
