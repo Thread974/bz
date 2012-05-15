@@ -881,17 +881,19 @@ static void state_changed(struct btd_adapter *adapter, gboolean powered)
 	adp->powered = powered;
 
 	if (powered) {
-		/* telephony driver already initialized*/
-		if (telephony == TRUE)
-			return;
-		telephony_init();
-		telephony = TRUE;
+		if (telephony == FALSE) {
+			telephony_init();
+			telephony = TRUE;
+		}
+		telephony_adapter_init(adapter);
 		return;
 	}
 
 	/* telephony not initialized just ignore power down */
 	if (telephony == FALSE)
 		return;
+
+	telephony_adapter_exit(adapter);
 
 	for (l = adapters; l; l = l->next) {
 		adp = l->data;

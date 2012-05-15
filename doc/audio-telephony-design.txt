@@ -1,0 +1,108 @@
+The org.bluez.Telephony interface will simplify BlueZ code by focusing on
+the Bluetooth communication part and by letting the external application (i.e.
+oFono) take charge of the Telephony tasks (AT parsing and modem specific code).
+So, it becomes simpler, easier to maintain and debug.
+
+External applications, which should implement AT parsing and telephony
+part of HeadSet or HandsFree Profiles, will have to register an
+org.bluez.TelephonyAgent using this new interface.
+This will setup a SDP record for the profile and a RFComm server listening for
+incoming connection.
+
+When a new device is connected, NewConnection method of TelephonyAgent is
+called. The telephony agent should reply to it after proper communication
+establishment (directly for HSP or after SLC setup completes for HFP).
+
+Interaction with the audio component (i.e. PulseAudio) will be done through the
+MediaTransport object (passed to telephony agent during NewConnection call).
+
+Here is some flowcharts of interactions between BlueZ, telephony agent (oFono)
+and audio component (PulseAudio):
+
+        .....>  Bluetooth communication between headset and phone
+        ----->  Dbus messages and signals
+
+SCO connection - AG initiated
+
+	PulseAudio              BlueZ             HF
+	|                         |               |
+	|    transport acquire    |               |
+	|------------------------>|               |
+	|                         |  connect SCO  |
+	|                         |<.............>|
+	|      return SCO fd      |               |
+	|<------------------------|               |
+	|                         |               |
+
+SCO connection - HF initiated
+
+	PulseAudio              BlueZ             HF
+	|                         |               |
+	|                         |  connect SCO  |
+	|                         |<.............>|
+	|  state changed signal   |               |
+	|<------------------------|               |
+	|                         |               |
+	|    transport acquire    |               |
+	|------------------------>|               |
+	|                         |               |
+	|      return SCO fd      |               |
+	|<------------------------|               |
+	|                         |               |
+
+AT+NREC
+
+	HF              oFono           BlueZ           PulseAudio
+	|     AT+NREC     |               |                  |
+	|................>|               |                  |
+	|                 |  SetProperty  |                  |
+	|                 |-------------->|                  |
+	|                 |               | property changed |
+	|                 |               |      signal      |
+	|                 |               |----------------->|
+
+
++BSIR
+
+	HF          oFono         BlueZ        PulseAudio        app
+	|             |             |               |             |
+	|             |             |               |<------------|
+	|             |             |  SetProperty  |             |
+	|             |             |<--------------|             |
+	|             |             |               |             |
+	|             |   property changed signal   |             |
+	|             |<------------*-------------->|             |
+	|   +BSIR:x   |             |               |             |
+	|<............|             |               |             |
+	|             |             |               |             |
+
+
+AT+VGS,AT+VGM
+
+	HF          oFono         BlueZ        PulseAudio        app
+	|             |             |               |             |
+	|  AT+VGS=xx  |             |               |             |
+	|............>|             |               |             |
+	|             | SetProperty |               |             |
+	|             |------------>|               |             |
+	|             |             |               |             |
+	|             |   property changed signal   |             |
+	|             |<------------*-------------->|             |
+	|             |             |               |------------>|
+	|             |             |               |             |
+
+
++VGS,+VGM
+
+	HF          oFono         BlueZ        PulseAudio        app
+	|             |             |               |             |
+	|             |             |               |<------------|
+	|             |             |  SetProperty  |             |
+	|             |             |<--------------|             |
+	|             |             |               |             |
+	|             |   property changed signal   |             |
+	|             |<------------*-------------->|             |
+	|   +VGS:xx   |             |               |             |
+	|<............|             |               |------------>|
+	|             |             |               |             |
+

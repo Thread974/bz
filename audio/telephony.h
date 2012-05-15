@@ -144,26 +144,15 @@ struct indicator {
 /* Notify telephony-*.c of connected/disconnected devices. Implemented by
  * telephony-*.c
  */
+void *telephony_device_connecting(GIOChannel *io, void *telephony_device,
+								void *agent);
 void telephony_device_connected(void *telephony_device);
+void telephony_device_disconnect(void *slc);
 void telephony_device_disconnected(void *telephony_device);
 
-/* HF requests (sent by the handsfree device). These are implemented by
- * telephony-*.c
- */
-void telephony_event_reporting_req(void *telephony_device, int ind);
-void telephony_response_and_hold_req(void *telephony_device, int rh);
-void telephony_last_dialed_number_req(void *telephony_device);
-void telephony_terminate_call_req(void *telephony_device);
-void telephony_answer_call_req(void *telephony_device);
-void telephony_dial_number_req(void *telephony_device, const char *number);
-void telephony_transmit_dtmf_req(void *telephony_device, char tone);
-void telephony_subscriber_number_req(void *telephony_device);
-void telephony_list_current_calls_req(void *telephony_device);
-void telephony_operator_selection_req(void *telephony_device);
-void telephony_call_hold_req(void *telephony_device, const char *cmd);
-void telephony_nr_and_ec_req(void *telephony_device, gboolean enable);
-void telephony_voice_dial_req(void *telephony_device, gboolean enable);
-void telephony_key_press_req(void *telephony_device, const char *keys);
+gboolean telephony_get_ready_state(void *adapter);
+uint32_t telephony_get_ag_features(void);
+void *telephony_agent_by_uuid(void *adapter, const char *uuid);
 
 /* AG responses to HF requests. These are implemented by headset.c */
 int telephony_event_reporting_rsp(void *telephony_device, cme_error_t err);
@@ -240,5 +229,7 @@ static inline int telephony_get_indicator(const struct indicator *indicators,
 	return -ENOENT;
 }
 
+int telephony_adapter_init(void *adapter);
+void telephony_adapter_exit(void *adapter);
 int telephony_init(void);
 void telephony_exit(void);
