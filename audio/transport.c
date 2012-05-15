@@ -828,6 +828,18 @@ static int set_property_gateway(struct media_transport *transport,
 	return -EINVAL;
 }
 
+static gboolean check_telephony_agent_name(struct media_transport *transport,
+							const char *sender)
+{
+	const char *tel_agent;
+
+	tel_agent = headset_get_telephony_agent_name(transport->device);
+	if (tel_agent != NULL && g_strcmp0(tel_agent, sender) == 0)
+		return TRUE;
+
+	return FALSE;
+}
+
 static DBusMessage *set_property(DBusConnection *conn, DBusMessage *msg,
 								void *data)
 {
@@ -836,6 +848,7 @@ static DBusMessage *set_property(DBusConnection *conn, DBusMessage *msg,
 	DBusMessageIter value;
 	const char *property, *sender;
 	GSList *l;
+	gboolean sender_ok = FALSE;
 	int err;
 
 	if (!dbus_message_iter_init(msg, &iter))
@@ -859,11 +872,17 @@ static DBusMessage *set_property(DBusConnection *conn, DBusMessage *msg,
 		struct media_owner *owner = l->data;
 
 		if (g_strcmp0(owner->name, sender) == 0) {
-			err = transport->set_property(transport, property,
-								&value);
+			sender_ok = TRUE;
 			break;
 		}
 	}
+
+	/* Check if Telephony agent does this request */
+	if (!sender_ok)
+		sender_ok = check_telephony_agent_name(transport, sender);
+
+	if (sender_ok)
+		err = transport->set_property(transport, property, &value);
 
 	if (err < 0) {
 		if (err == -EINVAL)

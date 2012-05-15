@@ -108,6 +108,7 @@ struct headset {
 	GIOChannel *rfcomm;
 	GIOChannel *tmp_rfcomm;
 	const char *connecting_uuid;
+	const char *connecting_path;
 	GIOChannel *sco;
 	guint sco_id;
 
@@ -410,6 +411,8 @@ void headset_connect_cb(GIOChannel *chan, GError *err, gpointer user_data)
 						hs->connecting_uuid);
 	hs->slc = telephony_device_connecting(chan, dev, agent);
 	hs->connecting_uuid = NULL;
+	telephony_set_media_transport_path(hs->slc, hs->connecting_path);
+	hs->connecting_path = NULL;
 
 	DBG("%s: Connected to %s", dev->path, hs_address);
 
@@ -544,6 +547,7 @@ failed_not_supported:
 failed:
 	p->svclass = 0;
 	hs->connecting_uuid = NULL;
+	hs->connecting_path = NULL;
 	pending_connect_finalize(dev);
 	headset_set_state(dev, HEADSET_STATE_DISCONNECTED);
 }
@@ -1134,6 +1138,31 @@ void headset_set_connecting_uuid(struct audio_device *dev, const char *uuid)
 	struct headset *hs = dev->headset;
 
 	hs->connecting_uuid = uuid;
+}
+
+void headset_set_media_transport_path(struct audio_device *dev,
+							const char *path)
+{
+	struct headset *hs = dev->headset;
+
+	DBG("MediaTransport path: %s", path);
+
+	if (hs->slc == NULL) {
+		hs->connecting_path = path;
+		return;
+	}
+
+	telephony_set_media_transport_path(hs->slc, path);
+}
+
+const char *headset_get_telephony_agent_name(struct audio_device *dev)
+{
+	struct headset *hs = dev->headset;
+
+	if (hs == NULL || hs->slc == NULL)
+		return NULL;
+
+	return telephony_get_agent_name(hs->slc);
 }
 
 int headset_connect_rfcomm(struct audio_device *dev, GIOChannel *io)

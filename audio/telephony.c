@@ -66,6 +66,7 @@ struct tel_device {
 	char			*path;		/* agent object path */
 	struct default_agent	*properties;
 	GIOChannel		*rfcomm;
+	const char		*transport_path;
 	uint16_t		version;
 	uint16_t		features;
 };
@@ -235,6 +236,10 @@ static gboolean agent_sendfd(struct tel_device *dev, int fd,
 		dict_append_entry(&dict, "Features", DBUS_TYPE_UINT16,
 							&dev->features);
 
+	if (dev->transport_path != NULL)
+		dict_append_entry(&dict, "Transport", DBUS_TYPE_OBJECT_PATH,
+							&dev->transport_path);
+
 	dbus_message_iter_close_container(&iter, &dict);
 
 	if (dbus_connection_send_with_reply(connection, msg, &call, -1)
@@ -391,6 +396,20 @@ void telephony_device_disconnect(void *slc)
 void telephony_device_disconnected(void *telephony_device)
 {
 	DBG("telephony-dbus: device %p disconnected", telephony_device);
+}
+
+void telephony_set_media_transport_path(void *slc, const char *path)
+{
+	struct tel_device *dev = slc;
+
+	dev->transport_path = path;
+}
+
+const char *telephony_get_agent_name(void *slc)
+{
+	struct tel_device *dev = slc;
+
+	return dev->name;
 }
 
 static sdp_record_t *hsp_ag_record(struct tel_agent * agent)
