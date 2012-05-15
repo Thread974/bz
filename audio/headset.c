@@ -387,22 +387,12 @@ void headset_connect_cb(GIOChannel *chan, GError *err, gpointer user_data)
 {
 	struct audio_device *dev = user_data;
 	struct headset *hs = dev->headset;
-	struct btd_adapter *adapter;
 	struct pending_connect *p = hs->pending;
 	char hs_address[18];
 	void *agent;
 
 	if (err) {
 		error("%s", err->message);
-		goto failed;
-	}
-
-	adapter = device_get_adapter(dev->btd_dev);
-
-	/* For HFP telephony isn't ready just disconnect */
-	if (hs->hfp_active && !telephony_get_ready_state(adapter)) {
-		error("Unable to accept HFP connection since the telephony "
-				"subsystem isn't initialized");
 		goto failed;
 	}
 
@@ -562,20 +552,30 @@ static int get_records(struct audio_device *device, headset_stream_cb_t cb,
 			void *user_data, unsigned int *cb_id)
 {
 	struct headset *hs = device->headset;
-	uint16_t svclass;
+	struct btd_adapter *adapter;
+	void *hsp_ag_agent, *hfp_ag_agent;
+	uint16_t svclass = 0;
 	uuid_t uuid;
 	int err;
 
-	if (hs->pending && hs->pending->svclass == HANDSFREE_SVCLASS_ID)
-		svclass = HEADSET_SVCLASS_ID;
-	else
-		svclass = hs->search_hfp ? HANDSFREE_SVCLASS_ID :
-							HEADSET_SVCLASS_ID;
+	adapter = device_get_adapter(device->btd_dev);
 
-	if (svclass == HANDSFREE_SVCLASS_ID)
+	hsp_ag_agent = telephony_agent_by_uuid(adapter, HSP_AG_UUID);
+	hfp_ag_agent = telephony_agent_by_uuid(adapter, HFP_AG_UUID);
+
+	if (hfp_ag_agent && hs->search_hfp && hs->pending == NULL) {
+		svclass = HANDSFREE_SVCLASS_ID;
 		hs->connecting_uuid = HFP_AG_UUID;
-	else
+	} else if (hsp_ag_agent) {
+		svclass = HEADSET_SVCLASS_ID;
 		hs->connecting_uuid = HSP_AG_UUID;
+	} else {
+		if (hs->pending) {
+			pending_connect_finalize(device);
+			headset_set_state(device, HEADSET_STATE_DISCONNECTED);
+		}
+		return -1;
+	}
 
 	sdp_uuid16_create(&uuid, svclass);
 
@@ -699,18 +699,12 @@ static DBusMessage *hs_connect(DBusConnection *conn, DBusMessage *msg,
 {
 	struct audio_device *device = data;
 	struct headset *hs = device->headset;
-	struct btd_adapter *adapter;
 	int err;
 
 	if (hs->state == HEADSET_STATE_CONNECTING)
 		return btd_error_in_progress(msg);
 	else if (hs->state > HEADSET_STATE_CONNECTING)
 		return btd_error_already_connected(msg);
-
-	adapter = device_get_adapter(device->btd_dev);
-
-	if (hs->hfp_handle && !telephony_get_ready_state(adapter))
-		return btd_error_not_ready(msg);
 
 	device->auto_connect = FALSE;
 
@@ -921,14 +915,14 @@ register_iface:
 	return hs;
 }
 
-uint32_t headset_config_init(GKeyFile *config)
+void headset_config_init(GKeyFile *config)
 {
 	GError *err = NULL;
 	char *str;
 
 	/* Use the default values if there is no config file */
 	if (config == NULL)
-		return telephony_get_ag_features();
+		return;
 
 	str = g_key_file_get_string(config, "General", "SCORouting",
 					&err);
@@ -944,8 +938,6 @@ uint32_t headset_config_init(GKeyFile *config)
 			error("Invalid Headset Routing value: %s", str);
 		g_free(str);
 	}
-
-	return telephony_get_ag_features();
 }
 
 static gboolean hs_dc_timeout(struct audio_device *dev)
@@ -1186,7 +1178,7 @@ void headset_set_state(struct audio_device *dev, headset_state_t state)
 		value = FALSE;
 		close_sco(dev);
 
-		if (dev->headset->slc)  {
+		if (dev->headset->slc) {
 			telephony_device_disconnect(dev->headset->slc);
 			dev->headset->slc = NULL;
 		}

@@ -24,9 +24,6 @@
 
 #define AUDIO_HEADSET_INTERFACE "org.bluez.Headset"
 
-#define DEFAULT_HS_AG_CHANNEL 12
-#define DEFAULT_HF_AG_CHANNEL 13
-
 typedef enum {
 	HEADSET_STATE_DISCONNECTED,
 	HEADSET_STATE_CONNECTING,
@@ -62,7 +59,7 @@ struct headset *headset_init(struct audio_device *dev, uint16_t svc,
 
 void headset_unregister(struct audio_device *dev);
 
-uint32_t headset_config_init(GKeyFile *config);
+void headset_config_init(GKeyFile *config);
 
 void headset_update(struct audio_device *dev, uint16_t svc,
 			const char *uuidstr);
