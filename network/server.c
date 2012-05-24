@@ -52,6 +52,8 @@
 
 #define NETWORK_SERVER_INTERFACE "org.bluez.NetworkServer"
 #define SETUP_TIMEOUT		1
+#define BNEP_HEADER(type) ((type) & ~BNEP_EXT_HEADER)
+#define BNEP_EXTENSION(type) ((type) & BNEP_EXT_HEADER)
 
 /* Pending Authorization */
 struct network_session {
@@ -348,6 +350,32 @@ static void setup_destroy(void *user_data)
 	session_free(setup);
 }
 
+static void parse_extensions(uint8_t *packet, unsigned int size, int sk)
+{
+	struct bnep_setup_conn_req *req = (void *) packet;
+	struct bnep_ext_hdr *ehdr;
+	unsigned int l;
+
+	l = sizeof(*req) + 2 * req->uuid_size;
+
+	while (l < size - sizeof(*ehdr)) {
+		uint8_t pkt[3];
+
+		ehdr = (struct bnep_ext_hdr *) (packet + l);
+
+		pkt[0] = BNEP_CONTROL;
+		pkt[1] = BNEP_CMD_NOT_UNDERSTOOD;
+		pkt[2] = ehdr->len;
+
+		send(sk, pkt, sizeof(pkt), 0);
+
+		if (!BNEP_EXTENSION(ehdr->type))
+			return;
+
+		l += sizeof(*ehdr) + ehdr->len;
+	}
+}
+
 static gboolean bnep_setup(GIOChannel *chan,
 			GIOCondition cond, gpointer user_data)
 {
@@ -377,7 +405,7 @@ static gboolean bnep_setup(GIOChannel *chan,
 
 	/* Highest known Control command ID
 	 * is BNEP_FILTER_MULT_ADDR_RSP = 0x06 */
-	if (req->type == BNEP_CONTROL &&
+	if (BNEP_HEADER(req->type) == BNEP_CONTROL &&
 				req->ctrl > BNEP_FILTER_MULT_ADDR_RSP) {
 		uint8_t pkt[3];
 
@@ -390,7 +418,8 @@ static gboolean bnep_setup(GIOChannel *chan,
 		return FALSE;
 	}
 
-	if (req->type != BNEP_CONTROL || req->ctrl != BNEP_SETUP_CONN_REQ)
+	if (BNEP_HEADER(req->type) != BNEP_CONTROL ||
+				req->ctrl != BNEP_SETUP_CONN_REQ)
 		return FALSE;
 
 	rsp = bnep_setup_decode(req, &dst_role, &src_role);
@@ -426,6 +455,9 @@ static gboolean bnep_setup(GIOChannel *chan,
 
 reply:
 	send_bnep_ctrl_rsp(sk, rsp);
+
+	if (BNEP_EXTENSION(req->type))
+		parse_extensions(packet, n, sk);
 
 	return FALSE;
 }
