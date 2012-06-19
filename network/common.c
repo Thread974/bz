@@ -188,6 +188,40 @@ int bnep_connadd(int sk, uint16_t role, char *dev)
 	return 0;
 }
 
+int bnep_netfilter(int sk, void *proto_filters, int len)
+{
+	struct bnep_netfilter_req req;
+
+	memset(&req, 0, sizeof(req));
+	req.sock = sk;
+	memcpy(&req.proto_filter, proto_filters, len);
+	req.len = len;
+	if (ioctl(ctl, BNEPSETNETFILTER, &req) < 0) {
+		int err = -errno;
+		error("Failed to add net filter: %s(%d)", strerror(-err), -err);
+		return err;
+	}
+
+	return 0;
+}
+
+int bnep_mcfilter(int sk, void *mc_filters, int len)
+{
+	struct bnep_mcfilter_req req;
+
+	memset(&req, 0, sizeof(req));
+	req.sock = sk;
+	memcpy(&req.mc_filter, mc_filters, len);
+	req.len = len;
+	if (ioctl(ctl, BNEPSETMCFILTER, &req) < 0) {
+		int err = -errno;
+		error("Failed to add mc filter: %s(%d)", strerror(-err), -err);
+		return err;
+	}
+
+	return 0;
+}
+
 int bnep_if_up(const char *devname)
 {
 	struct ifreq ifr;

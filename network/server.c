@@ -355,7 +355,8 @@ static void parse_extensions(uint8_t *packet, unsigned int size, int sk)
 {
 	struct bnep_setup_conn_req *req = (void *) packet;
 	struct bnep_ext_hdr *ehdr;
-	unsigned int l;
+	struct bnep_ctrl_ext_pkt *epkt;
+	unsigned int l, len;
 
 	l = sizeof(*req) + 2 * req->uuid_size;
 
@@ -363,13 +364,32 @@ static void parse_extensions(uint8_t *packet, unsigned int size, int sk)
 		uint8_t pkt[3];
 
 		ehdr = (struct bnep_ext_hdr *) (packet + l);
+		DBG("extension hdr type %x len %d", ehdr->type, ehdr->len);
+
+		if(BNEP_HEADER(ehdr->type) != BNEP_EXT_CONTROL)
+			return;
+
+		epkt = (struct bnep_ctrl_ext_pkt *) &ehdr->data;
+		len = ehdr->len - sizeof(epkt->ctrl);
+		DBG("extension ctrl %x len %d", epkt->ctrl, len);
+
+		switch(epkt->ctrl) {
+		case BNEP_FILTER_NET_TYPE_SET:
+			if (bnep_netfilter(sk, epkt->data, len) == 0)
+				goto noreply;
+			break;
+		case BNEP_FILTER_MULT_ADDR_SET:
+			if (bnep_mcfilter(sk, epkt->data, len) == 0)
+				goto noreply;
+			break;
+		}
 
 		pkt[0] = BNEP_CONTROL;
 		pkt[1] = BNEP_CMD_NOT_UNDERSTOOD;
 		pkt[2] = ehdr->len;
-
 		send(sk, pkt, sizeof(pkt), 0);
 
+noreply:
 		if (!BNEP_EXTENSION(ehdr->type))
 			return;
 

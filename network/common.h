@@ -35,3 +35,5 @@ int bnep_connadd(int sk, uint16_t role, char *dev);
 int bnep_if_up(const char *devname);
 int bnep_if_down(const char *devname);
 int bnep_add_to_bridge(const char *devname, const char *bridge);
+int bnep_netfilter(int sk, void *proto_filters, int len);
+int bnep_mcfilter(int sk, void *mc_filters, int len);

@@ -35,6 +35,10 @@ extern "C" {
 #define ETH_ALEN	6		/* from <net/ethernet.h> */
 #endif
 
+/* Limits */
+#define BNEP_MAX_PROTO_FILTERS		5
+#define BNEP_MAX_MULTICAST_FILTERS	20
+
 /* BNEP UUIDs */
 #define BNEP_BASE_UUID 0x0000000000001000800000805F9B34FB
 #define BNEP_UUID16    0x02
@@ -60,6 +64,9 @@ extern "C" {
 #define BNEP_FILTER_NET_TYPE_RSP   0x04
 #define BNEP_FILTER_MULT_ADDR_SET  0x05
 #define BNEP_FILTER_MULT_ADDR_RSP  0x06
+
+/* Extension types */
+#define BNEP_EXT_CONTROL 0x00
 
 /* BNEP response messages */
 #define BNEP_SUCCESS               0x00
@@ -115,11 +122,18 @@ struct bnep_ext_hdr {
 	uint8_t  data[0];
 } __attribute__((packed));
 
+struct bnep_ctrl_ext_pkt {
+	uint8_t  ctrl;
+	uint8_t  data[0];
+} __attribute__((packed));
+
 /* BNEP ioctl defines */
 #define BNEPCONNADD	_IOW('B', 200, int)
 #define BNEPCONNDEL	_IOW('B', 201, int)
 #define BNEPGETCONNLIST	_IOR('B', 210, int)
 #define BNEPGETCONNINFO	_IOR('B', 211, int)
+#define BNEPSETNETFILTER _IOR('B', 212, int)
+#define BNEPSETMCFILTER	_IOR('B', 213, int)
 
 struct bnep_connadd_req {
 	int      sock;		/* Connected socket */
@@ -144,6 +158,23 @@ struct bnep_conninfo {
 struct bnep_connlist_req {
 	uint32_t cnum;
 	struct bnep_conninfo *ci;
+};
+
+struct bnep_proto_filter {
+	uint16_t start;
+	uint16_t end;
+};
+
+struct bnep_netfilter_req {
+	int    sock;		/* Connected socket */
+	int    len;
+	struct bnep_proto_filter proto_filter[BNEP_MAX_PROTO_FILTERS];
+};
+
+struct bnep_mcfilter_req {
+	int                sock;		/* Connected socket */
+	int                len;
+	unsigned long long mc_filter[BNEP_MAX_MULTICAST_FILTERS];
 };
 
 #ifdef __cplusplus
