@@ -250,6 +250,8 @@ static void a2dp_resume_complete(struct avdtp *session,
 	uint16_t imtu, omtu;
 	gboolean ret;
 
+	DBG("%d", req->id);
+
 	req->id = 0;
 
 	if (err)
@@ -294,6 +296,8 @@ static guint resume_a2dp(struct media_transport *transport,
 	struct media_endpoint *endpoint = transport->endpoint;
 	struct audio_device *device = transport->device;
 	struct a2dp_sep *sep = media_endpoint_get_sep(endpoint);
+
+	DBG("transport %p session %p", transport, a2dp->session);
 
 	if (a2dp->session == NULL) {
 		a2dp->session = avdtp_get(&device->src, &device->dst);
