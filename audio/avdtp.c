@@ -781,6 +781,7 @@ static void stream_free(struct avdtp_stream *stream)
 {
 	struct avdtp_remote_sep *rsep;
 
+	DBG("lsep %p stream %p", stream->lsep, stream);
 	stream->lsep->info.inuse = 0;
 	stream->lsep->stream = NULL;
 
@@ -1459,6 +1460,7 @@ static void setconf_cb(struct avdtp *session, struct avdtp_stream *stream,
 
 	sep = stream->lsep;
 	sep->stream = stream;
+	DBG("lsep %p stream %p", sep, sep->stream);
 	sep->info.inuse = 1;
 	session->streams = g_slist_append(session->streams, stream);
 
@@ -1562,6 +1564,7 @@ static gboolean avdtp_setconf_cmd(struct avdtp *session, uint8_t transaction,
 		}
 
 		sep->stream = stream;
+		DBG("lsep %p stream %p", sep, sep->stream);
 		sep->info.inuse = 1;
 		session->streams = g_slist_append(session->streams, stream);
 
@@ -1737,6 +1740,7 @@ static gboolean avdtp_open_cmd(struct avdtp *session, uint8_t transaction,
 						AVDTP_OPEN, NULL, 0))
 		return FALSE;
 
+	DBG("session %p, stream %p, session->open_acp set to 1", session, stream);
 	stream->open_acp = TRUE;
 	session->pending_open = stream;
 	stream->timer = g_timeout_add_seconds(REQ_TIMEOUT,
@@ -1774,6 +1778,7 @@ static gboolean avdtp_start_cmd(struct avdtp *session, uint8_t transaction,
 
 		sep = find_local_sep_by_seid(session->server,
 					req->first_seid.seid);
+		DBG("session %p, seid %d, req->first_seid.seid %d, lsep %p, lsep->stream %p", session, seid->seid, req->first_seid.seid, sep, sep?sep->stream:NULL);
 		if (!sep || !sep->stream) {
 			err = AVDTP_BAD_ACP_SEID;
 			goto failed;
@@ -1886,6 +1891,7 @@ static gboolean avdtp_suspend_cmd(struct avdtp *session, uint8_t transaction,
 
 		sep = find_local_sep_by_seid(session->server,
 					req->first_seid.seid);
+		DBG("session %p, seid %d, req->first_seid.seid %d, lsep %p, lsep->stream %p", session, seid->seid, req->first_seid.seid, sep, sep?sep->stream:NULL);
 		if (!sep || !sep->stream) {
 			err = AVDTP_BAD_ACP_SEID;
 			goto failed;
@@ -2006,44 +2012,44 @@ static gboolean avdtp_parse_cmd(struct avdtp *session, uint8_t transaction,
 {
 	switch (signal_id) {
 	case AVDTP_DISCOVER:
-		DBG("Received DISCOVER_CMD");
+		DBG("session %p Received DISCOVER_CMD", session);
 		return avdtp_discover_cmd(session, transaction, buf, size);
 	case AVDTP_GET_CAPABILITIES:
-		DBG("Received  GET_CAPABILITIES_CMD");
+		DBG("session %p Received  GET_CAPABILITIES_CMD", session);
 		return avdtp_getcap_cmd(session, transaction, buf, size,
 									FALSE);
 	case AVDTP_GET_ALL_CAPABILITIES:
-		DBG("Received  GET_ALL_CAPABILITIES_CMD");
+		DBG("session %p Received  GET_ALL_CAPABILITIES_CMD", session);
 		return avdtp_getcap_cmd(session, transaction, buf, size, TRUE);
 	case AVDTP_SET_CONFIGURATION:
-		DBG("Received SET_CONFIGURATION_CMD");
+		DBG("session %p Received SET_CONFIGURATION_CMD", session);
 		return avdtp_setconf_cmd(session, transaction, buf, size);
 	case AVDTP_GET_CONFIGURATION:
-		DBG("Received GET_CONFIGURATION_CMD");
+		DBG("session %p Received GET_CONFIGURATION_CMD", session);
 		return avdtp_getconf_cmd(session, transaction, buf, size);
 	case AVDTP_RECONFIGURE:
-		DBG("Received RECONFIGURE_CMD");
+		DBG("session %p Received RECONFIGURE_CMD", session);
 		return avdtp_reconf_cmd(session, transaction, buf, size);
 	case AVDTP_OPEN:
-		DBG("Received OPEN_CMD");
+		DBG("session %p Received OPEN_CMD", session);
 		return avdtp_open_cmd(session, transaction, buf, size);
 	case AVDTP_START:
-		DBG("Received START_CMD");
+		DBG("session %p Received START_CMD", session);
 		return avdtp_start_cmd(session, transaction, buf, size);
 	case AVDTP_CLOSE:
-		DBG("Received CLOSE_CMD");
+		DBG("session %p Received CLOSE_CMD", session);
 		return avdtp_close_cmd(session, transaction, buf, size);
 	case AVDTP_SUSPEND:
-		DBG("Received SUSPEND_CMD");
+		DBG("session %p Received SUSPEND_CMD", session);
 		return avdtp_suspend_cmd(session, transaction, buf, size);
 	case AVDTP_ABORT:
-		DBG("Received ABORT_CMD");
+		DBG("session %p Received ABORT_CMD", session);
 		return avdtp_abort_cmd(session, transaction, buf, size);
 	case AVDTP_SECURITY_CONTROL:
-		DBG("Received SECURITY_CONTROL_CMD");
+		DBG("session %p Received SECURITY_CONTROL_CMD", session);
 		return avdtp_secctl_cmd(session, transaction, buf, size);
 	case AVDTP_DELAY_REPORT:
-		DBG("Received DELAY_REPORT_CMD");
+		DBG("session %p Received DELAY_REPORT_CMD", session);
 		return avdtp_delayreport_cmd(session, transaction, buf, size);
 	default:
 		DBG("Received unknown request id %u", signal_id);
@@ -2324,11 +2330,13 @@ static uint16_t get_version(struct avdtp *session)
 	uint16_t ver = 0x0100;
 
 	adapter = manager_find_adapter(&session->server->src);
+	DBG("adapter %p", adapter);
 	if (!adapter)
 		return ver;
 
 	ba2str(&session->dst, addr);
 	device = adapter_find_device(adapter, addr);
+	DBG("device %p", device);
 	if (!device)
 		return ver;
 
@@ -2336,6 +2344,7 @@ static uint16_t get_version(struct avdtp *session)
 	if (!rec)
 		rec = btd_device_get_record(device, A2DP_SOURCE_UUID);
 
+	DBG("rec %p", rec);
 	if (!rec)
 		return ver;
 
@@ -2343,11 +2352,14 @@ static uint16_t get_version(struct avdtp *session)
 		return ver;
 
 	proto_desc = sdp_get_proto_desc(protos, AVDTP_UUID);
+	DBG("proto_desc %p", proto_desc);
 	if (proto_desc && proto_desc->dtd == SDP_UINT16)
 		ver = proto_desc->val.uint16;
 
 	sdp_list_foreach(protos, (sdp_list_func_t) sdp_list_free, NULL);
 	sdp_list_free(protos, NULL);
+
+	DBG("final ver %x", ver);
 
 	return ver;
 }
@@ -2824,6 +2836,7 @@ static gboolean avdtp_discover_resp(struct avdtp *session,
 	int ret = 0;
 	gboolean getcap_pending = FALSE;
 
+	DBG("session->version %x, session->server->version %x", session->version, session->server->version);
 	if (session->version >= 0x0103 && session->server->version >= 0x0103)
 		getcap_cmd = AVDTP_GET_ALL_CAPABILITIES;
 	else
@@ -2851,6 +2864,7 @@ static gboolean avdtp_discover_resp(struct avdtp *session,
 		}
 
 		sep->stream = stream;
+		DBG("lsep %p stream %p", sep, sep->stream);
 		sep->seid = resp->seps[i].seid;
 		sep->type = resp->seps[i].type;
 		sep->media_type = resp->seps[i].media_type;
@@ -3581,6 +3595,7 @@ int avdtp_set_configuration(struct avdtp *session,
 	else {
 		lsep->info.inuse = 1;
 		lsep->stream = new_stream;
+		DBG("lsep %p stream %p", lsep, lsep->stream);
 		rsep->stream = new_stream;
 		session->streams = g_slist_append(session->streams, new_stream);
 		if (stream)
@@ -3668,6 +3683,8 @@ int avdtp_start(struct avdtp *session, struct avdtp_stream *stream)
 	struct start_req req;
 	int ret;
 
+	DBG("session %p, stream %p, stream->open_acp %d", session, stream, stream->open_acp);
+
 	if (!g_slist_find(session->streams, stream))
 		return -EINVAL;
 
@@ -3679,6 +3696,7 @@ int avdtp_start(struct avdtp *session, struct avdtp_stream *stream)
 	 *  to start the streaming via GAVDP_START.
 	 */
 	if (stream->open_acp) {
+		DBG("session %p, stream %p, stream->start_timer %d", session, stream, stream->start_timer);
 		/* If timer already active wait it */
 		if (stream->start_timer)
 			return 0;

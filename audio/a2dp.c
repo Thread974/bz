@@ -370,6 +370,7 @@ static void stream_state_changed(struct avdtp_stream *stream,
 	}
 
 	sep->stream = NULL;
+	DBG("sep %p lsep %p stream %p", sep, sep->lsep, sep->stream);
 
 	if (sep->endpoint && sep->endpoint->clear_configuration)
 		sep->endpoint->clear_configuration(sep, sep->user_data);
@@ -442,6 +443,7 @@ static gboolean endpoint_setconf_ind(struct avdtp *session,
 		return FALSE;
 
 	a2dp_sep->stream = stream;
+	DBG("sep %p lsep %p stream %p", a2dp_sep, a2dp_sep->lsep, a2dp_sep->stream);
 	setup->sep = a2dp_sep;
 	setup->stream = stream;
 	setup->setconf_cb = cb;
@@ -583,6 +585,7 @@ static void setconf_cfm(struct avdtp *session, struct avdtp_local_sep *sep,
 
 	avdtp_stream_add_cb(session, stream, stream_state_changed, a2dp_sep);
 	a2dp_sep->stream = stream;
+	DBG("sep %p lsep %p stream %p", a2dp_sep, a2dp_sep->lsep, a2dp_sep->stream);
 
 	if (!setup)
 		return;
@@ -703,6 +706,8 @@ static void open_cfm(struct avdtp *session, struct avdtp_local_sep *sep,
 
 static gboolean suspend_timeout(struct a2dp_sep *sep)
 {
+	DBG("sep %p lsep %p stream %p", sep, sep->lsep, sep->stream);
+
 	if (avdtp_suspend(sep->session, sep->stream) == 0)
 		sep->suspending = TRUE;
 
@@ -731,6 +736,7 @@ static gboolean start_ind(struct avdtp *session, struct avdtp_local_sep *sep,
 		a2dp_sep->suspend_timer = g_timeout_add_seconds(SUSPEND_TIMEOUT,
 						(GSourceFunc) suspend_timeout,
 						a2dp_sep);
+		DBG("session %p Setting suspend timeout", session);
 	}
 
 	if (!a2dp_sep->starting)
@@ -962,6 +968,7 @@ static void abort_ind(struct avdtp *session, struct avdtp_local_sep *sep,
 		DBG("Source %p: Abort_Ind", sep);
 
 	a2dp_sep->stream = NULL;
+	DBG("sep %p lsep %p stream %p", a2dp_sep, a2dp_sep->lsep, a2dp_sep->stream);
 
 	setup = find_setup_by_session(session);
 	if (!setup)
@@ -1659,6 +1666,8 @@ unsigned int a2dp_resume(struct avdtp *session, struct a2dp_sep *sep,
 	struct a2dp_setup_cb *cb_data;
 	struct a2dp_setup *setup;
 
+	DBG("session %p sep %p lsep %p sep->stream %p", session, sep, sep->lsep, sep->stream);
+
 	setup = a2dp_setup_get(session);
 	if (!setup)
 		return 0;
@@ -1675,6 +1684,7 @@ unsigned int a2dp_resume(struct avdtp *session, struct a2dp_sep *sep,
 		goto failed;
 		break;
 	case AVDTP_STATE_OPEN:
+		DBG("%p AVDTP_STATE_OPEN", sep);
 		if (avdtp_start(session, sep->stream) < 0) {
 			error("avdtp_start failed");
 			goto failed;
@@ -1682,6 +1692,7 @@ unsigned int a2dp_resume(struct avdtp *session, struct a2dp_sep *sep,
 		sep->starting = TRUE;
 		break;
 	case AVDTP_STATE_STREAMING:
+		DBG("%p AVDTP_STATE_STREAMING suspending %d, suspend_timer %d", sep, sep->suspending, sep->suspend_timer);
 		if (!sep->suspending && sep->suspend_timer) {
 			g_source_remove(sep->suspend_timer);
 			sep->suspend_timer = 0;
