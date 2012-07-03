@@ -2400,6 +2400,22 @@ struct avdtp *avdtp_get(bdaddr_t *src, bdaddr_t *dst)
 	return avdtp_ref(session);
 }
 
+static void acceptor_discovery_complete(struct avdtp *session, GSList *seps,
+				struct avdtp_error *err, void *user_data)
+{
+	if (err) {
+		if (avdtp_error_category(err) == AVDTP_ERRNO)
+			DBG("Acceptor discovery complete with POSIX error %d",
+						avdtp_error_posix_errno(err));
+		else
+			DBG("Acceptor discovery complete with AVDTP error %d",
+						avdtp_error_error_code(err));
+		return;
+	}
+
+	DBG("Acceptor discovery complete");
+}
+
 static void avdtp_connect_cb(GIOChannel *chan, GError *err, gpointer user_data)
 {
 	struct avdtp *session = user_data;
@@ -2454,6 +2470,8 @@ static void avdtp_connect_cb(GIOChannel *chan, GError *err, gpointer user_data)
 
 		if (session->stream_setup)
 			set_disconnect_timer(session);
+
+		avdtp_discover(session, acceptor_discovery_complete, NULL);
 	} else if (session->pending_open)
 		handle_transport_connect(session, chan, session->imtu,
 								session->omtu);
