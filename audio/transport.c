@@ -993,7 +993,12 @@ static DBusMessage *reconfigure(DBusConnection *conn, DBusMessage *msg,
 	if (dbus_message_iter_get_arg_type(&iter) != DBUS_TYPE_STRING)
 		return btd_error_invalid_args(msg);
 	dbus_message_iter_get_basic(&iter, &endpoint);
-
+/*
+	if (avdtp_close(a2dp->session, sep->stream, FALSE) < 0) {
+		error("avdtp_close failed");
+		return NULL;
+	}
+*/
 	req = media_request_create(msg, 0);
 	req->conn = dbus_connection_ref(conn);
 	media_transport_reconfigure(a2dp->session, endpoint, req);
