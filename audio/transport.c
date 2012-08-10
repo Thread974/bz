@@ -869,6 +869,58 @@ static DBusMessage *set_property(DBusConnection *conn, DBusMessage *msg,
 	return g_dbus_create_reply(msg, DBUS_TYPE_INVALID);
 }
 
+#if __BYTE_ORDER == __LITTLE_ENDIAN
+
+struct mpeg_codec_cap {
+	struct avdtp_media_codec_capability cap;
+	uint8_t channel_mode:4;
+	uint8_t crc:1;
+	uint8_t layer:3;
+	uint8_t frequency:6;
+	uint8_t mpf:1;
+	uint8_t rfa:1;
+	uint16_t bitrate;
+} __attribute__ ((packed));
+
+struct sbc_codec_cap {
+	struct avdtp_media_codec_capability cap;
+	uint8_t channel_mode:4;
+	uint8_t frequency:4;
+	uint8_t allocation_method:2;
+	uint8_t subbands:2;
+	uint8_t block_length:4;
+	uint8_t min_bitpool;
+	uint8_t max_bitpool;
+} __attribute__ ((packed));
+
+#elif __BYTE_ORDER == __BIG_ENDIAN
+
+struct mpeg_codec_cap {
+	struct avdtp_media_codec_capability cap;
+	uint8_t layer:3;
+	uint8_t crc:1;
+	uint8_t channel_mode:4;
+	uint8_t rfa:1;
+	uint8_t mpf:1;
+	uint8_t frequency:6;
+	uint16_t bitrate;
+} __attribute__ ((packed));
+
+struct sbc_codec_cap {
+	struct avdtp_media_codec_capability cap;
+	uint8_t frequency:4;
+	uint8_t channel_mode:4;
+	uint8_t block_length:4;
+	uint8_t subbands:2;
+	uint8_t allocation_method:2;
+	uint8_t min_bitpool;
+	uint8_t max_bitpool;
+} __attribute__ ((packed));
+
+#else
+#error "Unknown byte order"
+#endif
+
 static GSList *handle_a2dp_transport(uint8_t codec)
 {
 	struct avdtp_service_capability *media_transport, *media_codec;
@@ -876,12 +928,12 @@ static GSList *handle_a2dp_transport(uint8_t codec)
 	struct mpeg_codec_cap mpg_cap;
 	GSList *caps = NULL;
 
-	if (codec == A2DP_CODEC_MPEG12) {
+	if (codec == 1 /* A2DP_CODEC_MPEG12 */) {
 		memset(&mpg_cap, 0, sizeof(mpg_cap));
 
 		/* FIXME: this code says MP3 and hope the receiver accept */
 		mpg_cap.cap.media_type = AVDTP_MEDIA_TYPE_AUDIO;
-		mpg_cap.cap.media_codec_type = A2DP_CODEC_MPEG12;
+		mpg_cap.cap.media_codec_type = 1 /* A2DP_CODEC_MPEG12 */;
 		mpg_cap.channel_mode = 1; /* JS */
 		mpg_cap.crc = 0;
 		mpg_cap.layer = 1; /* L3 */
@@ -893,12 +945,12 @@ static GSList *handle_a2dp_transport(uint8_t codec)
 							sizeof(mpg_cap));
 
 		DBG("Handling switch to MPEG transport");
-	} else if (codec == A2DP_CODEC_SBC) {
+	} else if (codec == 0 /* A2DP_CODEC_SBC */) {
 		memset(&sbc_cap, 0, sizeof(sbc_cap));
 
 		/* FIXME: this is the mandatory SBC params for a source */
 		sbc_cap.cap.media_type = AVDTP_MEDIA_TYPE_AUDIO;
-		sbc_cap.cap.media_codec_type = A2DP_CODEC_SBC;
+		sbc_cap.cap.media_codec_type = 0 /* A2DP_CODEC_SBC */;
 		sbc_cap.channel_mode = 1; /* JS */
 		sbc_cap.frequency = (1 << 1); /* 44100 */
 		sbc_cap.allocation_method = 1; /* loudness */
