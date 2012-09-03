@@ -1901,6 +1901,16 @@ const char *media_endpoint_get_uuid(struct media_endpoint *endpoint)
 	return endpoint->uuid;
 }
 
+uint8_t *media_endpoint_get_caps(struct media_endpoint *endpoint)
+{
+	return endpoint->capabilities;
+}
+
+uint8_t media_endpoint_get_caps_len(struct media_endpoint *endpoint)
+{
+	return endpoint->size;
+}
+
 uint8_t media_endpoint_get_codec(struct media_endpoint *endpoint)
 {
 	return endpoint->codec;
