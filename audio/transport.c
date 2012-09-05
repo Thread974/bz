@@ -104,6 +104,8 @@ struct media_transport {
 	void			(*request_transport)(
 					struct media_transport *transport,
 					struct media_endpoint *endpoint,
+					uint8_t *config,
+					int length,
 					struct media_request *req);
 	GDestroyNotify		destroy;
 	void			*data;
@@ -880,6 +882,8 @@ static void a2dp_reconfigure_complete(struct avdtp *session, struct a2dp_sep *se
 {
 	struct media_request *req = user_data;
 
+	DBG("%p, %d", err, err ? ENOTSUP : 0);
+
 	media_request_reply(req, req->conn, err ? ENOTSUP : 0);
 
 	dbus_connection_unref(req->conn);
@@ -888,7 +892,8 @@ static void a2dp_reconfigure_complete(struct avdtp *session, struct a2dp_sep *se
 }
 
 static void request_transport_a2dp(struct media_transport *transport,
-		struct media_endpoint *endpoint, struct media_request *req)
+		struct media_endpoint *endpoint, uint8_t *config, int length,
+		struct media_request *req)
 {
 	struct a2dp_transport *a2dp = transport->data;
 	int err;
@@ -896,46 +901,67 @@ static void request_transport_a2dp(struct media_transport *transport,
 	struct avdtp_service_capability *cap;
 	GSList *caps = NULL;
 
+	DBG("");
+
 	sep = media_endpoint_get_sep(endpoint);
 
-	cap = avdtp_service_cap_new(AVDTP_MEDIA_CODEC,
-			media_endpoint_get_caps(endpoint),
-			media_endpoint_get_caps_len(endpoint));
+	cap = avdtp_service_cap_new(AVDTP_MEDIA_CODEC, config, length);
 	caps = g_slist_append(caps, cap);
 
 	cap = avdtp_service_cap_new(AVDTP_MEDIA_TRANSPORT, NULL, 0);
 	caps = g_slist_append(caps, cap);
 
-	err = a2dp_config(a2dp->session, sep, a2dp_reconfigure_complete,
+	DBG("config: %x %x %x %x %x %x, length %d", config[0], config[1], config[2], config[3], config[4], config[5], length);
+	req->id = a2dp_config(a2dp->session, sep, a2dp_reconfigure_complete,
 					caps, req);
-	if (err < 0)
+	DBG("req->id %d", req->id);
+	if (req->id == 0) {
+		err = -EINVAL;
 		goto failed;
+	}
 
-	req->id = err;
+	g_slist_free(caps);
 	return;
 
 failed:
 	media_request_reply(req, req->conn, -err);
-
 	dbus_connection_unref(req->conn);
-
 	g_free(req);
+	g_slist_free_full(caps, g_free);
 }
 
 static DBusMessage *request_transport(DBusConnection *conn, DBusMessage *msg,
 								void *data)
 {
 	struct media_transport *transport = data;
-	DBusMessageIter iter;
+	DBusMessageIter iter, array;
 	const char *path;
+	uint8_t codec;
+	uint8_t *config;
+	int length;
 	struct media_request *req;
 	struct media_endpoint *endpoint;
+	DBG("0");
 
 	if (!dbus_message_iter_init(msg, &iter))
 		return btd_error_invalid_args(msg);
 	if (dbus_message_iter_get_arg_type(&iter) != DBUS_TYPE_STRING)
 		return btd_error_invalid_args(msg);
 	dbus_message_iter_get_basic(&iter, &path);
+	dbus_message_iter_next(&iter);
+	DBG("1");
+
+	if (dbus_message_iter_get_arg_type(&iter) != DBUS_TYPE_BYTE)
+		return btd_error_invalid_args(msg);
+	dbus_message_iter_get_basic(&iter, &codec);
+	dbus_message_iter_next(&iter);
+	DBG("2");
+
+	if (dbus_message_iter_get_arg_type(&iter) != DBUS_TYPE_ARRAY)
+		return btd_error_invalid_args(msg);
+	dbus_message_iter_recurse(&iter, &array);
+	dbus_message_iter_get_fixed_array(&array, &config, &length);
+	DBG("3");
 
 	if (transport->request_transport == NULL)
 		return btd_error_not_supported(msg);
@@ -946,7 +972,7 @@ static DBusMessage *request_transport(DBusConnection *conn, DBusMessage *msg,
 
 	req = media_request_create(msg, 0);
 	req->conn = dbus_connection_ref(conn);
-	transport->request_transport(transport->data, endpoint, req);
+	transport->request_transport(transport, endpoint, config, length, req);
 
 	return NULL;
 }
@@ -1078,7 +1104,9 @@ static const GDBusMethodTable transport_methods[] = {
 			GDBUS_ARGS({ "name", "s" }, { "value", "v" }),
 			NULL, set_property) },
 	{ GDBUS_ASYNC_METHOD("RequestTransport",
-			GDBUS_ARGS({ "endpoint", "s" }),
+			GDBUS_ARGS({ "path", "s" },
+						{ "codec", "y" },
+						{ "config", "ay" }),
 			NULL, request_transport) },
 	{ },
 };
