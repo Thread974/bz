@@ -37,6 +37,8 @@
 #include "log.h"
 #include "deviceinfo.h"
 
+#define PNP_ID_SIZE	7
+
 struct deviceinfo {
 	struct btd_device	*dev;		/* Device reference */
 	GAttrib			*attrib;	/* GATT connection */
@@ -84,15 +86,16 @@ static void read_pnpid_cb(guint8 status, const guint8 *pdu, guint16 len,
 							gpointer user_data)
 {
 	struct characteristic *ch = user_data;
-	uint8_t value[ATT_MAX_MTU];
-	int vlen;
+	uint8_t value[PNP_ID_SIZE];
+	ssize_t vlen;
 
 	if (status != 0) {
 		error("Error reading PNP_ID value: %s", att_ecode2str(status));
 		return;
 	}
 
-	if (!dec_read_resp(pdu, len, value, &vlen)) {
+	vlen = dec_read_resp(pdu, len, value, sizeof(value));
+	if (vlen < 0) {
 		error("Error reading PNP_ID: Protocol error");
 		return;
 	}

@@ -55,6 +55,7 @@
 #define POWER_LEVEL_CHR_UUID 0x2A07
 
 #define IMMEDIATE_TIMEOUT	5
+#define TX_POWER_SIZE		1
 
 enum {
 	ALERT_NONE = 0,
@@ -211,21 +212,22 @@ static int write_alert_level(struct monitor *monitor)
 static void tx_power_read_cb(guint8 status, const guint8 *pdu, guint16 plen,
 							gpointer user_data)
 {
-	uint8_t value[ATT_MAX_MTU];
-	int vlen;
+	uint8_t value[TX_POWER_SIZE];
+	ssize_t vlen;
 
 	if (status != 0) {
 		DBG("Tx Power Level read failed: %s", att_ecode2str(status));
 		return;
 	}
 
-	if (!dec_read_resp(pdu, plen, value, &vlen)) {
+	vlen = dec_read_resp(pdu, plen, value, sizeof(value));
+	if (vlen < 0) {
 		DBG("Protocol error");
 		return;
 	}
 
 	if (vlen != 1) {
-		DBG("Invalid length for TX Power value: %d", vlen);
+		DBG("Invalid length for TX Power value: %zd", vlen);
 		return;
 	}
 

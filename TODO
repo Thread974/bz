@@ -30,6 +30,46 @@ General
   Priority: Low
   Complexity: C1
 
+BlueZ 5
+=======
+
+Priority/Complexity ommited as all items are required before 5.0 is
+released.
+
+- Make mgmtops part of Bluetooth core. mgmt will be the only way to
+  communicate with the kernel in BlueZ so a plugin is not needed
+  anymore. Probably plugins/mgmtops.c -> src/mgmt.c
+
+- Switch to standard D-Bus properties interface
+
+- Switch to standard object manager interface
+
+- Reorganize source tree according to RFC sent to linux-bluetooth
+  (Subject: [RFC] Reorganizing the BlueZ source tree)
+
+- Remove deprecated D-Bus signals and methods (ensuring new ones are in
+  place to replace what's removed).
+
+- Remove telephony driver framework and replace with the telephony agent
+  patches.
+
+- Related to the telephony architecture rework, figure out how fast
+  connectable should work.
+	- New FastConnectable Adapter property?
+	- Should the property fall back to False after a timeout (e.g.
+	  30 seconds)?
+	- Should the kernel auto-disable this mode as soon as the
+	  adapter gets an incoming connect request?
+
+- Remove UNIX socket based audio interface (along with ALSA plugin)
+
+- Clean up libbluetooth and only export a very minimal API (for
+  RFCOMM/L2CAP socket use)
+
+- Merge obexd.git into bluez.git
+
+- Remove unmaintained plugins like pnat and maemo6
+
 Low Energy
 ==========
 
