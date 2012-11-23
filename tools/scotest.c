@@ -58,6 +58,7 @@ static long data_size = 672;
 static bdaddr_t bdaddr;
 
 static int defer_setup = 0;
+static int codec = 0;
 
 static float tv2fl(struct timeval tv)
 {
@@ -68,6 +69,7 @@ static int do_connect(char *svr)
 {
 	struct sockaddr_sco addr;
 	struct sco_conninfo conn;
+	struct sco_options  opts;
 	socklen_t optlen;
 	int sk;
 
@@ -86,6 +88,15 @@ static int do_connect(char *svr)
 
 	if (bind(sk, (struct sockaddr *) &addr, sizeof(addr)) < 0) {
 		syslog(LOG_ERR, "Can't bind socket: %s (%d)",
+							strerror(errno), errno);
+		goto error;
+	}
+
+	/* Add SCO options */
+	memset(&opts, 0, sizeof(opts));
+	opts.codec = codec;
+	if (setsockopt(sk, SOL_SCO, SCO_OPTIONS, &opts, sizeof(opts)) < 0) {
+		syslog(LOG_ERR, "Can't set socket options: %s (%d)",
 							strerror(errno), errno);
 		goto error;
 	}
@@ -229,7 +240,15 @@ error:
 
 static void dump_mode(int sk)
 {
+	struct sco_options opts;
 	int len;
+
+	/* Add SCO options */
+	memset(&opts, 0, sizeof(opts));
+	opts.codec = codec;
+	if (setsockopt(sk, SOL_SCO, SCO_OPTIONS, &opts, sizeof(opts)) < 0)
+		syslog(LOG_ERR, "Can't set socket options: %s (%d)",
+							strerror(errno), errno);
 
 	if (defer_setup) {
 		len = read(sk, buf, sizeof(buf));
@@ -248,8 +267,16 @@ static void dump_mode(int sk)
 static void recv_mode(int sk)
 {
 	struct timeval tv_beg,tv_end,tv_diff;
+	struct sco_options opts;
 	long total;
 	int len;
+
+	/* Add SCO options */
+	memset(&opts, 0, sizeof(opts));
+	opts.codec = codec;
+	if (setsockopt(sk, SOL_SCO, SCO_OPTIONS, &opts, sizeof(opts)) < 0)
+		syslog(LOG_ERR, "Can't set socket options: %s (%d)",
+							strerror(errno), errno);
 
 	if (defer_setup) {
 		len = read(sk, buf, sizeof(buf));
@@ -381,7 +408,8 @@ static void usage(void)
 		"\t-n connect and be silent (client)\n"
 		"Options:\n"
 		"\t[-b bytes]\n"
-		"\t[-W seconds] enable deferred setup\n");
+		"\t[-W seconds] enable deferred setup\n"
+		"\t[-C codec] select codec (sco only: 0 cvsd, 1 msbc)\n");
 }
 
 int main(int argc ,char *argv[])
@@ -389,7 +417,7 @@ int main(int argc ,char *argv[])
 	struct sigaction sa;
 	int opt, sk, mode = RECV;
 
-	while ((opt = getopt(argc, argv, "rdscmnb:W:")) != EOF) {
+	while ((opt = getopt(argc, argv, "rdscmnb:W:C:")) != EOF) {
 		switch(opt) {
 		case 'r':
 			mode = RECV;
@@ -421,6 +449,10 @@ int main(int argc ,char *argv[])
 
 		case 'W':
 			defer_setup = atoi(optarg);
+			break;
+
+		case 'C':
+			codec = atoi(optarg);
 			break;
 
 		default:
