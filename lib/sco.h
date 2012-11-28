@@ -47,6 +47,7 @@ struct sockaddr_sco {
 #define SCO_OPTIONS	0x01
 struct sco_options {
 	uint16_t	mtu;
+	uint8_t		codec;
 };
 
 #define SCO_CONNINFO	0x02
