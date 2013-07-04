@@ -450,6 +450,11 @@ const uint8_t *btdev_get_bdaddr(struct btdev *btdev)
 	return btdev->bdaddr;
 }
 
+uint8_t *btdev_get_features(struct btdev *btdev)
+{
+	return btdev->features;
+}
+
 void btdev_set_command_handler(struct btdev *btdev, btdev_command_func handler,
 							void *user_data)
 {
@@ -680,6 +685,22 @@ static void sync_conn_complete(struct btdev *btdev, uint16_t voice_setting, uint
 	cc.air_mode = (voice_setting == 0x0060) ? 0x02 : 0x03;
 
 	send_event(btdev, BT_HCI_EVT_SYNC_CONN_COMPLETE, &cc, sizeof(cc));
+}
+
+static void sco_conn_complete(struct btdev *btdev, uint8_t status)
+{
+	struct bt_hci_evt_conn_complete cc;
+
+	if (!btdev->conn)
+		return;
+
+	cc.status = status;
+	memcpy(cc.bdaddr, btdev->conn->bdaddr, 6);
+	cc.handle = cpu_to_le16(status == BT_HCI_ERR_SUCCESS ? 257 : 0);
+	cc.link_type = 0x00;
+	cc.encr_mode = 0x00;
+
+	send_event(btdev, BT_HCI_EVT_CONN_COMPLETE, &cc, sizeof(cc));
 }
 
 static void conn_request(struct btdev *btdev, const uint8_t *bdaddr)
@@ -1520,6 +1541,10 @@ static void default_cmd(struct btdev *btdev, uint16_t opcode,
 		status = BT_HCI_ERR_SUCCESS;
 		cmd_status(btdev, BT_HCI_ERR_SUCCESS, opcode);
 		sync_conn_complete(btdev, ssc->voice_setting, BT_HCI_ERR_SUCCESS);
+		break;
+
+	case BT_HCI_CMD_ADD_SCO_CONN:
+		sco_conn_complete(btdev, BT_HCI_ERR_SUCCESS);
 		break;
 
 	default:
